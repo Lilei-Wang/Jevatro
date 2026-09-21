@@ -1,0 +1,11 @@
+# 依赖与下载
+_downloads/
+__pycache__/
+*.pyc
+
+# 密钥（API key 永不入库）
+jevatro/.env
+
+# 运行日志（决策数据本地保留）
+jevatro/logs/*.jsonl
+jevatro/logs/*.txt

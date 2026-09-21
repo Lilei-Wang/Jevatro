@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>小丑牌（Balatro）× Jev 结合技术方案</title>
+<style>
+  :root {
+    --navy: #16233d;
+    --navy-2: #1d2f52;
+    --red: #d9382b;
+    --red-dark: #b52a1f;
+    --blue: #0071e3;
+    --ink: #1f2733;
+    --muted: #5b6675;
+    --line: #e3e8ef;
+    --bg: #f6f8fb;
+    --card: #ffffff;
+    --code-bg: #0f172a;
+    --code-ink: #dbe4f3;
+    --chip-blue-bg: #e8f1fd;
+    --chip-red-bg: #fdeaea;
+    --ok: #1a7f4e;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.75;
+    font-size: 16px;
+  }
+
+  /* ===== 布局 ===== */
+  .layout { display: flex; min-height: 100vh; }
+  aside.toc {
+    width: 264px; flex-shrink: 0;
+    background: linear-gradient(180deg, var(--navy) 0%, var(--navy-2) 100%);
+    color: #c6d2e6;
+    padding: 28px 18px 40px;
+    position: sticky; top: 0; height: 100vh; overflow-y: auto;
+  }
+  aside.toc::-webkit-scrollbar { width: 6px; }
+  aside.toc::-webkit-scrollbar-thumb { background: #33456b; border-radius: 3px; }
+  main {
+    flex: 1; min-width: 0;
+    padding: 48px 56px 80px;
+    max-width: 1000px;
+  }
+  @media (max-width: 960px) {
+    .layout { display: block; }
+    aside.toc { position: static; width: 100%; height: auto; max-height: none; }
+    main { padding: 32px 20px 64px; }
+  }
+
+  /* ===== 侧边目录 ===== */
+  .toc-brand { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+  .chip {
+    width: 30px; height: 30px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 14px; color: #fff; flex-shrink: 0;
+    border: 3px dashed rgba(255,255,255,.85);
+  }
+  .chip.r { background: var(--red); }
+  .chip.b { background: var(--blue); }
+  .toc-brand b { color: #fff; font-size: 15px; }
+  .toc-sub { font-size: 12px; color: #8fa1c2; margin: 0 0 18px 40px; }
+  .toc a {
+    display: block; color: #c6d2e6; text-decoration: none;
+    font-size: 13.5px; padding: 6px 10px; border-radius: 6px;
+    border-left: 3px solid transparent;
+  }
+  .toc a:hover { background: rgba(255,255,255,.07); color: #fff; }
+  .toc a.active { background: rgba(217,56,43,.18); color: #fff; border-left-color: var(--red); }
+  .toc .toc-note {
+    margin-top: 22px; padding: 12px; border-radius: 8px;
+    background: rgba(255,255,255,.06); font-size: 12px; color: #9fb0cd; line-height: 1.6;
+  }
+
+  /* ===== 头部 ===== */
+  .doc-head .kicker {
+    color: var(--red); font-weight: 700; letter-spacing: .12em; font-size: 13px;
+    text-transform: uppercase;
+  }
+  .doc-head h1 {
+    font-size: 34px; line-height: 1.3; margin: 10px 0 14px;
+    letter-spacing: .01em;
+  }
+  .meta-line { color: var(--muted); font-size: 14px; margin-bottom: 10px; }
+  .badges { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 8px; }
+  .badge {
+    font-size: 12.5px; font-weight: 600; padding: 4px 12px; border-radius: 999px;
+  }
+  .badge.gray  { background: #eef1f6; color: #4a5568; }
+  .badge.red   { background: var(--chip-red-bg); color: var(--red-dark); }
+  .badge.blue  { background: var(--chip-blue-bg); color: #0b5cb8; }
+  .badge.green { background: #e6f4ec; color: var(--ok); }
+  .doc-head hr { border: none; border-top: 1px solid var(--line); margin: 26px 0 34px; }
+
+  /* ===== 章节 ===== */
+  section { margin: 0 0 46px; scroll-margin-top: 20px; }
+  h2 {
+    display: flex; align-items: center; gap: 12px;
+    font-size: 23px; margin: 0 0 18px; padding-bottom: 10px;
+    border-bottom: 2px solid var(--line);
+  }
+  h2 .no {
+    background: var(--red); color: #fff; font-size: 14px; font-weight: 800;
+    border-radius: 8px; padding: 2px 10px; flex-shrink: 0;
+  }
+  h3 { font-size: 18px; margin: 26px 0 10px; color: #14203a; }
+  h3 .no { color: var(--red); font-weight: 800; margin-right: 8px; }
+  p { margin: 10px 0; }
+
+  /* ===== 组件 ===== */
+  .tldr {
+    background: linear-gradient(135deg, #16233d 0%, #24406e 100%);
+    color: #e7edf7; border-radius: 14px; padding: 22px 26px; margin: 0 0 12px;
+    border-left: 6px solid var(--red);
+  }
+  .tldr .t { font-weight: 800; color: #fff; margin-bottom: 10px; font-size: 17px; }
+  .tldr ul { margin: 8px 0 2px; padding-left: 22px; }
+  .tldr li { margin: 6px 0; }
+  .tldr b { color: #ffd9d4; }
+
+  blockquote {
+    margin: 14px 0; padding: 12px 18px; border-left: 4px solid var(--red);
+    background: #fdf3f2; border-radius: 0 10px 10px 0; color: #57332e;
+  }
+  blockquote p { margin: 4px 0; }
+
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14.5px; }
+  th {
+    background: var(--navy); color: #fff; text-align: left;
+    padding: 9px 14px; font-weight: 700; font-size: 13.5px;
+  }
+  td { padding: 9px 14px; border-bottom: 1px solid var(--line); vertical-align: top; background: var(--card); }
+  tr:nth-child(even) td { background: #fbfcfe; }
+  table code { white-space: nowrap; }
+
+  pre {
+    background: var(--code-bg); color: var(--code-ink);
+    border-radius: 12px; padding: 18px 20px; overflow-x: auto;
+    font-size: 13.5px; line-height: 1.65; margin: 14px 0;
+    font-family: "Cascadia Code", Consolas, "JetBrains Mono", monospace;
+  }
+  code {
+    font-family: "Cascadia Code", Consolas, "JetBrains Mono", monospace;
+    background: #eaeef5; color: #b3261e; padding: 1.5px 6px; border-radius: 5px; font-size: 13.5px;
+  }
+  pre code { background: none; color: inherit; padding: 0; font-size: inherit; }
+  .cmt { color: #64748b; }
+  .kw  { color: #7dd3fc; }
+  .str { color: #fbbf24; }
+  .fn  { color: #a5f3b8; }
+
+  ul, ol { padding-left: 26px; }
+  li { margin: 5px 0; }
+  .tight li { margin: 3px 0; }
+
+  .stat-row { display: flex; flex-wrap: wrap; gap: 14px; margin: 18px 0; }
+  .stat {
+    flex: 1 1 180px; background: var(--card); border: 1px solid var(--line);
+    border-radius: 12px; padding: 14px 18px; text-align: center;
+    box-shadow: 0 1px 3px rgba(22,35,61,.05);
+  }
+  .stat .v { font-size: 24px; font-weight: 800; color: var(--red); }
+  .stat .l { font-size: 12.5px; color: var(--muted); margin-top: 4px; }
+
+  .refs { font-size: 14px; }
+  .refs li { margin: 7px 0; }
+  a { color: var(--blue); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .arch { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; overflow-x: auto; }
+  .arch pre { background: none; color: var(--ink); margin: 0; font-size: 12.5px; line-height: 1.5; }
+
+  #backtop {
+    position: fixed; right: 26px; bottom: 30px; width: 42px; height: 42px;
+    border-radius: 50%; border: none; background: var(--red); color: #fff;
+    font-size: 18px; cursor: pointer; box-shadow: 0 4px 14px rgba(217,56,43,.4);
+    display: none;
+  }
+  #backtop:hover { background: var(--red-dark); }
+
+  @media print {
+    aside.toc, #backtop { display: none; }
+    body { background: #fff; }
+    main { padding: 0; max-width: 100%; }
+    pre { white-space: pre-wrap; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+
+<!-- ============ 侧边目录 ============ -->
+<aside class="toc">
+  <div class="toc-brand">
+    <span class="chip r">🃏</span><span class="chip b" style="margin-left:-8px">J</span>
+    <b>小丑牌 × Jev</b>
+  </div>
+  <div class="toc-sub">结合技术方案 · v1.0</div>
+  <nav id="tocNav">
+    <a href="#s0">0 · 摘要（TL;DR）</a>
+    <a href="#s1">1 · 调研结论</a>
+    <a href="#s2">2 · 方案定位与目标</a>
+    <a href="#s3">3 · 总体架构</a>
+    <a href="#s4">4 · 基础设施层：balatrobot</a>
+    <a href="#s5">5 · Tier 0：精确求解器</a>
+    <a href="#s6">6 · Tier 1：Jev 判断层设计</a>
+    <a href="#s7">7 · 回合决策循环</a>
+    <a href="#s8">8 · 评测方案</a>
+    <a href="#s9">9 · 成本与延迟测算</a>
+    <a href="#s10">10 · 风险与对策</a>
+    <a href="#s11">11 · 实施路线图</a>
+    <a href="#s12">12 · 参考资料</a>
+  </nav>
+  <div class="toc-note">
+    <b>一句话</b>：出牌交给求解器，直觉判断交给 Jev，不确定再找 LLM。单局约 $0.01，决策亚秒级。
+  </div>
+</aside>
+
+<!-- ============ 正文 ============ -->
+<main>
+  <div class="doc-head">
+    <div class="kicker">Technical Proposal</div>
+    <h1>小丑牌（Balatro）× Jev 结合技术方案</h1>
+    <div class="meta-line">版本 v1.0 · 2026-09-21</div>
+    <div class="badges">
+      <span class="badge red">Jev / TypeSafe AI</span>
+      <span class="badge blue">balatrobot</span>
+      <span class="badge blue">Evalatro</span>
+      <span class="badge green">单局 ≈ $0.01</span>
+      <span class="badge green">决策 70–500ms</span>
+      <span class="badge gray">Python 3.10+</span>
+    </div>
+    <div class="meta-line">前置调研：TypeSafe AI Jev（System One 决策模型）官方文档与生态、Balatro AI 开源生态（balatrobot / Evalatro / balatro-gym / balatro-calculator / GPT-6 Astra 通关项目）</div>
+    <hr>
+  </div>
+
+  <!-- ============ 0 摘要 ============ -->
+  <section id="s0">
+    <h2><span class="no">0</span>摘要（TL;DR）</h2>
+    <div class="tldr">
+      <div class="t">核心思路：小丑牌的决策天然分为两层——"能精确计算的"和"靠直觉判断的"。前者交给求解器（代码），后者正好是 Jev 这类"哑巴模型"的主场。</div>
+      <ul>
+        <li>出牌/弃牌用<b>穷举求解器</b>精确计算（218 种组合内可全枚举），不花一分钱、零延迟；</li>
+        <li>商店买牌、跳盲注、卡组方向（Archetype）识别等<b>模糊战略判断</b>交给 <b>Jev</b>（Choice/Score/Noul 三种题型、单次 70–500ms、输出免费、输入 $0.042/百万 token）；</li>
+        <li>低置信度决策可<b>升级（escalate）给 LLM</b>（可选），形成"求解器 → Jev → LLM"三层漏斗；</li>
+        <li>游戏控制层复用开源 <b>balatrobot</b>（游戏内 JSON-RPC 2.0 HTTP API），评测复用 <b>Evalatro</b> 的记分法；</li>
+        <li>预期成本：<b>一整局（到 Ante 8）约 $0.01、决策延迟亚秒级</b>，比纯 LLM 方案（分钟级延迟、$1–10/局）低 2–3 个数量级。</li>
+      </ul>
+    </div>
+    <div class="stat-row">
+      <div class="stat"><div class="v">$0.01</div><div class="l">单局成本（到 Ante 8）</div></div>
+      <div class="stat"><div class="v">&lt;500ms</div><div class="l">单步决策延迟（批量多题）</div></div>
+      <div class="stat"><div class="v">$0</div><div class="l">Jev 输出 token 费用</div></div>
+      <div class="stat"><div class="v">100–150</div><div class="l">单局 Jev 调用次数</div></div>
+    </div>
+  </section>
+
+  <!-- ============ 1 调研 ============ -->
+  <section id="s1">
+    <h2><span class="no">1</span>调研结论</h2>
+
+    <h3><span class="no">1.1</span>Jev：只做判断、不做生成的"哑巴模型"</h3>
+    <p>TypeSafe AI 发布的 System One 模型，<b>不生成自然语言，只返回结构化判断结果</b>：</p>
+    <table>
+      <tr><th>题型</th><th>语义</th><th>返回</th></tr>
+      <tr><td><b>Choice</b></td><td>从带 key 的候选中选一个</td><td><code>choice</code> + 全候选 <code>probabilities</code> + <code>confidence</code></td></tr>
+      <tr><td><b>Score</b></td><td>按有序等级量表（rubric）打分</td><td><code>score</code>（如 0–4）+ <code>probabilities</code> + <code>confidence</code></td></tr>
+      <tr><td><b>Noul</b></td><td>是非概率判断</td><td><code>noul</code> ∈ [0,1]</td></tr>
+    </table>
+    <p>关键工程特性：</p>
+    <ul class="tight">
+      <li><b>接口</b>：<code>POST https://api.typesafe.ai/v1/systemone</code>，Bearer 鉴权，模型名 <code>jev-latest</code>（当前 jev-1.13.0）；也可走 OpenRouter <code>~typesafe/jev-latest</code>。Python SDK：<code>pip install typesafe-sdk</code>（读 <code>TYPESAFE_API_KEY</code> 环境变量），另有 JS SDK。</li>
+      <li><b>批处理</b>：一次调用可混装任意多道题，<b>并行、隔离</b>地跑在同一份 <code>state</code> 上，加题几乎不增加响应时间——这是本方案商店决策的核心杠杆。</li>
+      <li><b>经济性</b>：输入 $0.042/MTok、<b>输出免费</b>；端到端延迟 70–500ms；限流约 250K tok/s。</li>
+      <li><b>置信度</b>：经 RLCD（Reinforcement Learning for Calibrated Decisions）校准，<code>confidence</code> 可直接用于路由（官方 Confidence-Gated Routing 模式）。</li>
+      <li><b>官方最佳实践</b>：题目要<b>原子化</b>（一个有经验的人几秒内能做的"直觉判断"）；多因子判断拆成多道题，<b>加权逻辑写在自己代码里</b>（Composite Scoring 模式），改权重不用改 prompt。</li>
+    </ul>
+    <blockquote><p><b>Jev 的边界</b>：不能做长链推理、不能生成内容、判断质量依赖 <code>state</code> 的表述质量。所以它不能独立"打牌"，但能承担高频、廉价、可校准的直觉判断层。</p></blockquote>
+
+    <h3><span class="no">1.2</span>小丑牌 AI 技术路线全景（截至 2026-09）</h3>
+    <table>
+      <tr><th style="width:130px">路线</th><th style="width:320px">代表项目</th><th>结论</th></tr>
+      <tr>
+        <td><b>游戏控制 API</b></td>
+        <td><a href="https://github.com/coder/balatrobot">balatrobot</a>（coder 维护，besteon 原作）</td>
+        <td>成熟可用。Lovely+Steamodded 之上的 Lua mod，在游戏内起 JSON-RPC 2.0 HTTP 服务（默认 <code>127.0.0.1:12346</code>），覆盖完整游戏控制</td>
+      </tr>
+      <tr>
+        <td><b>LLM 全权决策</b></td>
+        <td>GPT-6 Astra bot（Reddit 用户 Atol8，金注黑牌组多次通关）；<a href="https://github.com/coder/balatrollm">balatrollm</a></td>
+        <td>已被验证<b>可行但昂贵</b>：LLM 管战略 + BalatroBot 管状态/合法性 + Python 数值工具管计算，能通最高难度，但每步 5–30s、单局成本美元级，且仍有低级失误</td>
+      </tr>
+      <tr>
+        <td><b>LLM 基准评测</b></td>
+        <td><a href="https://github.com/alesha-pro/evalatro">Evalatro</a>（alesha-pro）</td>
+        <td>把小丑牌变成可复现 LLM benchmark：真实游戏 + balatrobot + TS runner，记录每步决策/token/成本，记分 <code>progress × legality</code>，目标 Ante 12；工具注册表还能跑成 MCP server</td>
+      </tr>
+      <tr>
+        <td><b>强化学习</b></td>
+        <td><a href="https://github.com/cassiusfive/balatro-gym">balatro-gym</a>（Gymnasium 环境）；果蝇脑 RL（约 20% 白注胜率）</td>
+        <td>路线存在但战绩一般：长视野+部分可观测+稀疏奖励，样本效率低；balatro-gym 是<b>快速迭代模拟器</b>（Python 规则复现，注意版本保真度），适合做训练环/批量评估</td>
+      </tr>
+      <tr>
+        <td><b>精确求解器</b></td>
+        <td><a href="https://github.com/EFHIII/balatro-calculator">EFHIII/balatro-calculator</a></td>
+        <td>单局面最优出牌已完全解决：给定手牌+小丑+倍率算最高分打法。<b>说明出牌层根本不需要 AI</b></td>
+      </tr>
+    </table>
+
+    <h3><span class="no">1.3</span>关键洞察：小丑牌决策天然分层</h3>
+    <p>把一局小丑牌的所有决策点按"是否可精确计算"分类：</p>
+    <table>
+      <tr><th>决策点</th><th>性质</th><th>现有最优解</th></tr>
+      <tr><td>出哪几张牌 / 弃哪几张</td><td><b>精确</b>：≤218 种出牌组合可全枚举，收益可精确算分</td><td>求解器（零成本、最优）</td></tr>
+      <tr><td>商店买哪个小丑/道具</td><td><b>模糊</b>：涉及协同、成长性、经济、卡组方向的多维权衡</td><td>LLM 或人类直觉 → <b>Jev 的 Composite Scoring 正好匹配</b></td></tr>
+      <tr><td>跳过/选择哪个盲注</td><td><b>混合</b>：战力可算，但跳过的长线价值模糊</td><td>求解器估战力 + <b>Jev 做风险偏好判断</b></td></tr>
+      <tr><td>开包选哪张</td><td><b>模糊</b>：与构筑方向的匹配度</td><td><b>Jev Choice</b></td></tr>
+      <tr><td>卡组方向识别（同花/对子/高牌流…）</td><td><b>模糊</b>：看小丑+升级+牌堆趋势的"读牌"</td><td><b>Jev Noul fan-out → argmax</b></td></tr>
+      <tr><td>小丑替换（卖旧买新）</td><td><b>混合</b>：精确算分差 + <b>Jev 判断协同损失</b></td><td>混合</td></tr>
+      <tr><td>重掷商店</td><td><b>模糊</b>：期望价值 vs 节奏</td><td><b>Jev Noul</b></td></tr>
+    </table>
+    <blockquote>
+      <p><b>这正是心理学里 System 1（快直觉）/ System 2（慢推理）的划分，也是 Jev 命名"System One model"的本意。GPT-6 bot 用大模型同时干了两层的活，贵且慢；本方案把 System 1 的活下放给 Jev，System 2 的活下放给求解器，LLM 只在两者都不确定时兜底。</b></p>
+    </blockquote>
+  </section>
+
+  <!-- ============ 2 定位 ============ -->
+  <section id="s2">
+    <h2><span class="no">2</span>方案定位与目标</h2>
+    <p>三条可选产品形态，建议以 ① 为主线，②③ 为衍生产出：</p>
+    <ol>
+      <li><b>主线：Jev 驱动的自动打牌 Agent（"Jevatro"）</b>——求解器+Jev 混合决策引擎，通过 balatrobot 操控真实游戏，目标白注稳定通关（Ante 8+），冲击金注黑牌组。</li>
+      <li><b>衍生：实时教练/复盘插件</b>——人类自己玩，Jev 在商店/盲注界面给建议（70–500ms 延迟足够做到"秒回"），Evalatro 式逐决策日志做复盘。</li>
+      <li><b>衍生：提交 Evalatro 基准</b>——"solver+Jev 混合"作为一个参赛配置，顺带产出 Jev 游戏判断能力的公开数据。</li>
+    </ol>
+    <blockquote><p><b>非目标</b>：不修改游戏本体逻辑、不做任何联网对战用途（小丑牌是单机游戏，社区 mod 生态被官方容忍；须自购 Steam 正版）。</p></blockquote>
+  </section>
+
+  <!-- ============ 3 架构 ============ -->
+  <section id="s3">
+    <h2><span class="no">3</span>总体架构</h2>
+    <div class="arch">
+<pre>┌─────────────────────────────────────────────────────────────┐
+│                决策引擎（外部进程，Python）                    │
+│                                                             │
+│  ┌───────────────┐   ┌──────────────────┐   ┌────────────┐  │
+│  │ Tier 0 求解器 │   │  Tier 1 Jev 层   │   │ Tier 2 LLM │  │
+│  │ 出牌/弃牌穷举 │   │ 商店/盲注/方向识别│   │ 低置信兜底 │  │
+│  │ 精确算分(本地)│   │ Choice/Score/Noul│   │ (可选开关) │  │
+│  └──────┬────────┘   └────────┬─────────┘   └─────┬──────┘  │
+│         │    confidence &lt; τ 时升级 ────────────────▶│         │
+│         └────────────────┬─────────────────────────┘         │
+│                          ▼                                   │
+│                 回合决策循环（状态机）                        │
+└──────────────────────────┬──────────────────────────────────┘
+                           │ JSON-RPC 2.0 over HTTP
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Balatro（Steam 正版）+ Lovely 注入器 + Steamodded +        │
+│  balatrobot mod（监听 127.0.0.1:12346）                      │
+└─────────────────────────────────────────────────────────────┘</pre>
+    </div>
+    <table>
+      <tr><th style="width:150px">组件</th><th style="width:300px">职责</th><th>复用/自研</th></tr>
+      <tr><td>balatrobot</td><td>游戏状态读取 + 全量动作执行</td><td>复用开源</td></tr>
+      <tr><td>状态序列化器</td><td>把 <code>gamestate</code> 压缩成 Jev 可读的紧凑文本</td><td>自研（~100 行）</td></tr>
+      <tr><td>求解器（Tier 0）</td><td>枚举出牌组合、精确算分、算弃牌期望</td><td>自研算分核（规则公开）或移植 balatro-calculator</td></tr>
+      <tr><td>Jev 决策层（Tier 1）</td><td>商店 composite scoring、盲注 Noul、方向识别 fan-out</td><td>自研题目集 + typesafe-sdk</td></tr>
+      <tr><td>LLM 兜底（Tier 2）</td><td>低置信度场景的深度推理</td><td>可选，OpenAI 兼容任意端点</td></tr>
+      <tr><td>评测器</td><td>固定种子批量跑局、Evalatro 记分、A/B 报告</td><td>复用 Evalatro 记分法 + 自研批跑</td></tr>
+      <tr><td>日志器</td><td>逐决策记录 state/题目/回答/置信度/动作/成本</td><td>自研（JSONL）</td></tr>
+    </table>
+    <p><b>语言选型：Python 3.10+</b>。理由：typesafe-sdk 官方 Python 支持；balatrobot 官方示例 bot 是 Python；求解器数值计算生态最好；Evalatro runner 是 TS 但只借鉴其记分协议，不必跟随。</p>
+  </section>
+
+  <!-- ============ 4 基础设施 ============ -->
+  <section id="s4">
+    <h2><span class="no">4</span>基础设施层：balatrobot 接入</h2>
+
+    <h3><span class="no">4.1</span>安装</h3>
+    <ol>
+      <li>Steam 购买并安装 Balatro（Windows/macOS 原生，Linux 走 Proton 实验性 attach 模式）；</li>
+      <li>装 <a href="https://old.thunderstore.io/c/balatro/">Lovely</a>（运行时 Lua 注入器）+ <a href="https://github.com/Steamodded/smods">Steamodded</a>（mod 框架）；</li>
+      <li>把 balatrobot 丢进 <code>Mods/</code> 目录，启动游戏后即监听 <code>http://127.0.0.1:12346</code>。</li>
+    </ol>
+
+    <h3><span class="no">4.2</span>本方案用到的 API 面（JSON-RPC 2.0）</h3>
+    <table>
+      <tr><th style="width:220px">方法</th><th style="width:230px">参数</th><th>用途</th></tr>
+      <tr><td><code>health</code> / <code>gamestate</code></td><td>—</td><td>健康检查 / 全量状态（含 jokers、hand、shop、blinds、money、ante…）</td></tr>
+      <tr><td><code>start</code></td><td><code>deck</code>, <code>stake</code>, <code>seed</code>?</td><td><b>可控种子开局</b>（评测可复现的关键）</td></tr>
+      <tr><td><code>select</code> / <code>skip</code></td><td>—</td><td>选盲 / 跳盲（Boss 盲不可跳）</td></tr>
+      <tr><td><code>play</code></td><td><code>cards: int[]</code>（手牌索引）</td><td>出牌</td></tr>
+      <tr><td><code>discard</code></td><td><code>cards: int[]</code></td><td>弃牌</td></tr>
+      <tr><td><code>buy</code> / <code>sell</code> / <code>reroll</code> / <code>pack</code></td><td>商店/背包索引</td><td>商店全套操作</td></tr>
+      <tr><td><code>use</code></td><td><code>consumable</code>, <code>cards</code>?</td><td>使用塔罗/星球等消耗牌</td></tr>
+      <tr><td><code>cash_out</code> / <code>next_round</code></td><td>—</td><td>回合结算 / 离开商店</td></tr>
+      <tr><td><code>save</code> / <code>load</code></td><td><code>path</code></td><td>存档点（评测与调试）</td></tr>
+      <tr><td><code>add</code> / <code>set</code>（debug）</td><td>—</td><td><b>仅限调试，评测期禁用</b></td></tr>
+    </table>
+    <p>错误码 <code>-32002 INVALID_STATE</code> / <code>-32003 NOT_ALLOWED</code> 即天然合法性校验。</p>
+<pre><code><span class="kw">import</span> requests
+
+<span class="kw">class</span> <span class="fn">BalatroClient</span>:
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, url=<span class="str">"http://127.0.0.1:12346"</span>):
+        self.url, self._id = url, 0
+
+    <span class="kw">def</span> <span class="fn">call</span>(self, method, **params):
+        self._id += 1
+        r = requests.post(self.url, json={
+            <span class="str">"jsonrpc"</span>: <span class="str">"2.0"</span>, <span class="str">"id"</span>: self._id,
+            <span class="str">"method"</span>: method, <span class="str">"params"</span>: params
+        }, timeout=30)
+        payload = r.json()
+        <span class="kw">if</span> <span class="str">"error"</span> <span class="kw">in</span> payload:
+            <span class="kw">raise</span> RuntimeError(f<span class="str">"{method}: {payload['error']}"</span>)
+        <span class="kw">return</span> payload[<span class="str">"result"</span>]</code></pre>
+  </section>
+
+  <!-- ============ 5 求解器 ============ -->
+  <section id="s5">
+    <h2><span class="no">5</span>Tier 0：精确求解器（不需要 AI 的部分）</h2>
+    <p><b>职责</b>：给定 <code>gamestate</code>，回答"这手牌怎么打/怎么弃最优"。</p>
+    <ul>
+      <li>手牌上限 8 张，出牌组合 ΣC(8,k), k=1..5 = <b>218 种</b>，全枚举无压力；</li>
+      <li>算分核按公开计分规则实现（底分×等级 → chips × mult，小丑触发顺序按在场顺序）；</li>
+      <li>输出：最高分打法、各候选打法分数表、以及"预计 N 手内能否过盲"（当前盲需求 chips ÷ 最优单手期望 → 与剩余手数比较）；</li>
+      <li>该分数表同时<b>喂给 Jev 层</b>作为事实基础（见 §6.1），让 Jev 只判断"分数之外"的东西。</li>
+    </ul>
+    <blockquote>
+      <p>实现策略：先移植 <a href="https://efhiii.github.io/balatro-calculator/">EFHIII/balatro-calculator</a> 的算分逻辑（JS，可用子进程或翻译成 Python），或直接按规则自写。规则测试用 balatrobot 的 <code>set</code>/<code>add</code> 构造固定局面做对拍。</p>
+      <p><b>弃牌搜索</b>是求解器里唯一带启发式的部分（弃牌是面向未来的：想凑同花/顺子）。M1 阶段用简单启发（保留人数最多的目标牌型），M3 阶段可让 Jev 出"留牌方向"的 Choice（见 §6.4）。</p>
+    </blockquote>
+  </section>
+
+  <!-- ============ 6 Jev 层 ============ -->
+  <section id="s6">
+    <h2><span class="no">6</span>Tier 1：Jev 判断层设计（本方案核心）</h2>
+
+    <h3><span class="no">6.1</span>状态序列化：Jev 的 <code>state</code> 怎么写</h3>
+    <p>Jev 的判断质量取决于 state 表述。原则：<b>紧凑、结构化、面向判断</b>（不是 dump 全量 JSON）。</p>
+<pre><code>[局] Ante 3/8, 盲注需求 2400 chips, 底注$5, 金币$28, 手数4/4, 弃数3/3
+[构筑方向-同花流] 手牌等级: 同花L4(40×4), 对子L2, 高牌L1
+[小丑] 1. j_fortune_teller(每张塔罗+1 mult, 现×23)  2. j_blueprint(复制左侧)
+[手牌] ♠A ♥3 ♦3 ♣3 ♠7 ♥9 ♦J ♣2
+[商店] 小丑: j_hologram(稀有,买包永久+15mult,现×1) $7 / j_even_steven(偶数牌+4mult) $4
+       星球: Planet Mars(对子升级) $3  塔罗: The Hermit(加倍金钱) $4  背包: $4
+[求解器事实] 最优打法: 3♥3♦3♣ 对子 = 312分; 4手满打预计 1100/2400 (不足)</code></pre>
+    <p>要点：小丑用社区标准 key（<code>j_xxx</code>）+ 一句话人话释义（Jev 是语义模型，不认识 Balatro 专有 key，<b>必须带释义</b>）；末尾附求解器算出的事实，让 Jev 的题目只聚焦在判断上。</p>
+
+    <h3><span class="no">6.2</span>商店决策：Composite Scoring（官方模式直接套用）</h3>
+    <p>对商店里每个可买项 + （可选）背包内容，一次 Jev 调用批量打四个维度（5 级 rubric，0–4），代码里加权求和：</p>
+<pre><code><span class="kw">from</span> typesafe_sdk <span class="kw">import</span> Choice, Noul, Score, TypeSafeClient
+
+jev = TypeSafeClient()
+
+SHOP_RUBRIC = {
+    <span class="str">"synergy"</span>: Score(
+        instructions=<span class="str">"该商品与当前小丑/牌型等级的协同程度"</span>,
+        criteria=[
+            <span class="str">"0 与现有构筑零交互或机制冲突"</span>,
+            <span class="str">"1 略有相关但方向不符"</span>,
+            <span class="str">"2 中性填充,不拖后腿"</span>,
+            <span class="str">"3 明确加强现有方向"</span>,
+            <span class="str">"4 核心拼图,直接改变战力曲线"</span>,
+        ],
+    ),
+    <span class="str">"scaling"</span>: Score(instructions=<span class="str">"该商品的长期成长性(本局剩余局数视角)"</span>,
+        criteria=[<span class="str">"0 无成长"</span>, <span class="str">"1 一次性"</span>, <span class="str">"2 轻微成长"</span>, <span class="str">"3 稳定成长"</span>, <span class="str">"4 复利式成长"</span>]),
+    <span class="str">"economy"</span>: Score(instructions=<span class="str">"该商品对金钱/利息循环的贡献"</span>,
+        criteria=[<span class="str">"0 纯花钱无回报"</span>, <span class="str">"1 略亏"</span>, <span class="str">"2 回本"</span>, <span class="str">"3 产出>成本"</span>, <span class="str">"4 直接利息引擎"</span>]),
+    <span class="str">"immediate"</span>: Score(instructions=<span class="str">"立刻解掉当前盲注燃眉之急的程度"</span>,
+        criteria=[<span class="str">"0 无助"</span>, <span class="str">"1 微弱"</span>, <span class="str">"2 有些帮助"</span>, <span class="str">"3 明显"</span>, <span class="str">"4 本回合就靠它"</span>]),
+}
+
+<span class="kw">def</span> <span class="fn">score_shop</span>(state_text: str) -> list:
+    questions = {}
+    items = current_shop_items()          <span class="cmt"># [{key, desc, price, slot}, ...]</span>
+    <span class="kw">for</span> it <span class="kw">in</span> items:
+        <span class="kw">for</span> dim, q <span class="kw">in</span> SHOP_RUBRIC.items():
+            questions[f<span class="str">"{it['slot']}__{dim}"</span>] = Score(
+                instructions=f<span class="str">"商品[{it['desc']}, ${it['price']}] 的{q.instructions}"</span>,
+                criteria=q.criteria,
+            )
+    resp = jev.system_one(state=state_text, questions=questions)  <span class="cmt"># 一次调用,全部并行</span>
+    out = []
+    <span class="kw">for</span> it <span class="kw">in</span> items:
+        a = resp.answers
+        norm = <span class="kw">lambda</span> d: a[f<span class="str">"{it['slot']}__{d}"</span>].score / 4
+        out.append({
+            **it,
+            <span class="str">"conf"</span>: min(a[f<span class="str">"{it['slot']}__{d}"</span>].confidence <span class="kw">for</span> d <span class="kw">in</span> SHOP_RUBRIC),
+            <span class="str">"value"</span>: 0.40*norm(<span class="str">"synergy"</span>) + 0.25*norm(<span class="str">"scaling"</span>)
+                   + 0.15*norm(<span class="str">"economy"</span>)  + 0.20*norm(<span class="str">"immediate"</span>),
+        })
+    <span class="kw">return</span> sorted(out, key=<span class="kw">lambda</span> x: -x[<span class="str">"value"</span>])</code></pre>
+    <p><b>权重即策略</b>：四个权重是公开、可调、可按"卡组方向"切换的配置——这就是官方 Composite Scoring 模式"改系数不改 prompt"的优势。比如经济紧张期把 <code>economy</code> 权重临时上调。</p>
+    <p><b>买与不买</b>：<code>value</code> 高且买得起 → 买；再补一道 Noul 门闩：</p>
+<pre><code><span class="str">"should_buy_top"</span>: Noul(instructions=(
+    f<span class="str">"买下{top['desc']}(${top['price']})后的金币为${after}，"</span>
+    <span class="str">"考虑到利息结算与后续商店，此刻买入是合理的"</span>))</code></pre>
+
+    <h3><span class="no">6.3</span>卡组方向识别：Noul Fan-out + Intent Routing（决定权重表）</h3>
+    <p>每个商店进入时，一次调用批量问一组 Noul：</p>
+<pre><code>ARCHETYPES = {
+    <span class="str">"flush"</span>:    <span class="str">"当前构筑正走同花/花色方向"</span>,
+    <span class="str">"pair"</span>:     <span class="str">"当前构筑正走对子/满堂方向"</span>,
+    <span class="str">"highcard"</span>: <span class="str">"当前构筑正走高牌+X多倍小丑方向"</span>,
+    <span class="str">"straight"</span>: <span class="str">"当前构筑正走顺子方向"</span>,
+    <span class="str">"econ"</span>:     <span class="str">"当前处于攒钱/经济运营阶段"</span>,
+    <span class="str">"chips"</span>:    <span class="str">"当前缺少乘区,需要的是mult类小丑"</span>,
+}
+questions = {k: Noul(instructions=v) <span class="kw">for</span> k, v <span class="kw">in</span> ARCHETYPES.items()}
+probs = {k: a.noul <span class="kw">for</span> k, a <span class="kw">in</span> resp.answers.items()}
+archetype = max(probs, key=probs.get)   <span class="cmt"># → 切换 §6.2 的权重表 W[archetype]</span></code></pre>
+    <p>官方文档明确：<b>一次调用内所有题目并行、隔离执行，加题几乎不加延迟</b>——所以 6.2+6.3 合并成每次进商店<b>一次 Jev 调用</b>（10–30 道题），延迟仍是 70–500ms 一档。</p>
+
+    <h3><span class="no">6.4</span>其他决策点的题目设计</h3>
+    <table>
+      <tr><th style="width:130px">决策点</th><th style="width:90px">题型</th><th>题目示意</th></tr>
+      <tr><td>选盲/跳盲</td><td>Noul ×2</td><td>"求解器预计 3 手内过此盲概率不足，跳过它换下一阶段tag是合理的" / "以当前战力打 Boss盲(效果:手牌-1)风险可接受"</td></tr>
+      <tr><td>卖小丑腾位</td><td>Choice</td><td>criteria=各小丑 key+释义，instructions="若必须卖一个为{新小丑}腾位，卖哪个损失最小"</td></tr>
+      <tr><td>重掷商店</td><td>Noul</td><td>"当前商店无任何 value&gt;0.5 的商品,花${x}重掷的期望优于直接离店"</td></tr>
+      <tr><td>开包选择</td><td>Choice</td><td>criteria=包内每张牌的 key+释义，instructions="对{archetype}方向最有价值的是"</td></tr>
+      <tr><td>弃牌方向（进阶）</td><td>Choice</td><td>criteria=[保留同花/保留对子/弃最高牌…] 指导求解器的弃牌启发</td></tr>
+      <tr><td>消耗牌使用</td><td>Noul/Choice</td><td>"The Hermit 现在用掉 vs 攒到商店后用,哪个更好"</td></tr>
+    </table>
+
+    <h3><span class="no">6.5</span>置信度路由：三层漏斗的切换规则</h3>
+<pre><code><span class="kw">def</span> <span class="fn">decide</span>(decision_point, state):
+    fact = solver.facts(state)            <span class="cmt"># Tier 0: 精确事实</span>
+    <span class="kw">if</span> fact.is_forced:                    <span class="cmt"># 唯一合法/唯一可行动作</span>
+        <span class="kw">return</span> fact.action, {<span class="str">"tier"</span>: 0}
+
+    ans = jev_decide(decision_point, state, fact)   <span class="cmt"># Tier 1</span>
+    <span class="kw">if</span> ans.confidence &gt;= TAU:             <span class="cmt"># 默认 TAU=0.62,按校准曲线调</span>
+        <span class="kw">return</span> ans.action, {<span class="str">"tier"</span>: 1, <span class="str">"conf"</span>: ans.confidence}
+
+    <span class="kw">if</span> LLM_ENABLED:                       <span class="cmt"># Tier 2: 可选</span>
+        <span class="kw">return</span> llm_decide(decision_point, state, fact), {<span class="str">"tier"</span>: 2}
+    <span class="kw">return</span> ans.safe_default, {<span class="str">"tier"</span>: 1, <span class="str">"fallback"</span>: True}   <span class="cmt"># 保钱、跳过、不动</span></code></pre>
+    <ul>
+      <li><b>每个决策点都定义 <code>safe_default</code></b>（通常是"不买/不卖/不重掷"），Jev 不确定时的保守动作几乎无副作用——这是 Jev 校准置信度带来的独特安全性质；</li>
+      <li>τ 不拍脑袋：评测期画 reliability diagram，取"置信度≥τ 时实际正确率≥85%"的最小 τ；</li>
+      <li>Tier 2 的 prompt 里带上 Jev 的概率分布作为先验（"模型认为是 A(0.55) vs B(0.45)"），显著减少 LLM 的无谓发散。</li>
+    </ul>
+
+    <h3><span class="no">6.6</span>Jev 作为 LLM 模式的守门员（如果走 LLM 主导路线）</h3>
+    <p>如果对比实验里让 LLM 全权决策，每步执行前加一道廉价 Jev Noul 复核："该动作在此状态下明显有害吗（如卖掉唯一成长引擎/跳过必过的盲）"——<code>noul &gt; 0.5</code> 则拒绝并要求重选。相当于给 GPT-6 方案加一层 $0.0001/步的护栏。</p>
+  </section>
+
+  <!-- ============ 7 决策循环 ============ -->
+  <section id="s7">
+    <h2><span class="no">7</span>回合决策循环（伪代码）</h2>
+<pre><code><span class="kw">def</span> <span class="fn">run_one_game</span>(deck, stake, seed, profile):
+    bot = BalatroClient()
+    jev = JevLayer(profile)                 <span class="cmt"># 权重表 + 题目集</span>
+    st = bot.call(<span class="str">"start"</span>, deck=deck, stake=stake, seed=seed)
+    <span class="kw">while</span> True:
+        gs = bot.call(<span class="str">"gamestate"</span>)
+        state_text = serialize(gs)          <span class="cmt"># §6.1</span>
+        log.begin_turn(gs, state_text)
+
+        phase = gs[<span class="str">"state"</span>]
+        <span class="kw">if</span> phase == <span class="str">"BLIND_SELECT"</span>:
+            act = decide(<span class="str">"blind"</span>, state_text)          <span class="cmt"># select / skip</span>
+            gs = bot.call(<span class="str">"skip"</span> <span class="kw">if</span> act == <span class="str">"skip"</span> <span class="kw">else</span> <span class="str">"select"</span>)
+        <span class="kw">elif</span> phase == <span class="str">"SELECTING_HAND"</span>:
+            play, conf = solver.best_play(gs)           <span class="cmt"># Tier 0 直出</span>
+            <span class="kw">if</span> solver.will_clear(gs):                   <span class="cmt"># 能过:最省手数打法</span>
+                gs = bot.call(<span class="str">"play"</span>, cards=play)
+            <span class="kw">else</span>:
+                direction = decide(<span class="str">"discard_dir"</span>, state_text)  <span class="cmt"># Jev 指方向</span>
+                gs = bot.call(<span class="str">"discard"</span>, cards=solver.best_discard(gs, direction))
+        <span class="kw">elif</span> phase == <span class="str">"ROUND_EVAL"</span>:
+            gs = bot.call(<span class="str">"cash_out"</span>)
+        <span class="kw">elif</span> phase == <span class="str">"SHOP"</span>:
+            batch = jev.shop_batch(state_text)          <span class="cmt"># §6.2+6.3 一次调用</span>
+            <span class="kw">for</span> action <span class="kw">in</span> plan_shop_actions(batch):     <span class="cmt"># 买/卖/重掷/买包排序</span>
+                gs = execute(bot, action)
+            gs = bot.call(<span class="str">"next_round"</span>)
+        <span class="kw">elif</span> phase == <span class="str">"OPENING_BOOSTER"</span>:
+            pick = decide(<span class="str">"booster"</span>, state_text)        <span class="cmt"># Choice</span>
+            gs = bot.call(<span class="str">"pack"</span>, card=pick)
+        <span class="kw">elif</span> phase == <span class="str">"GAME_OVER"</span> <span class="kw">or</span> won(gs):
+            <span class="kw">break</span>
+        log.end_turn()
+    <span class="kw">return</span> summarize_run(log)</code></pre>
+    <p>关键点：<b>出牌是求解器直出的（Tier 0），每个商店只发生 1 次 Jev 调用（批量），每个盲注选择最多 1 次</b>——单局 Jev 调用次数约 100–150 次。</p>
+  </section>
+
+  <!-- ============ 8 评测 ============ -->
+  <section id="s8">
+    <h2><span class="no">8</span>评测方案</h2>
+
+    <h3><span class="no">8.1</span>记分：沿用 Evalatro 协议</h3>
+    <ul class="tight">
+      <li><code>progress = 阶梯位置 / (目标Ante × 3)</code>（目标 Ante 12；过 Ante 8 只是里程碑）；</li>
+      <li><code>legality = 1 - 非法动作数/总动作数</code>（balatrobot 错误码直接统计）；</li>
+      <li><code>score = round(progress × legality × 100, 1)</code>；</li>
+      <li>每局落盘 JSONL：每步的 state 快照、Jev 题目与回答（含 confidence）、动作、token、成本、结局。</li>
+    </ul>
+
+    <h3><span class="no">8.2</span>实验矩阵（固定种子集，可复现）</h3>
+    <table>
+      <tr><th style="width:180px">配置</th><th>说明</th></tr>
+      <tr><td>A. naive 基线</td><td>确定性脚本（打最高分牌、见啥买啥），零 token，对照下界</td></tr>
+      <tr><td>B. solver-only</td><td>只用 Tier 0，商店用固定启发，量化"直觉层"的价值</td></tr>
+      <tr><td>C. solver+Jev</td><td>本方案主配置</td></tr>
+      <tr><td>D. solver+Jev+LLM 兜底</td><td>量化 Tier 2 的边际收益 vs 成本</td></tr>
+      <tr><td>E. 纯 LLM（可选）</td><td>复现 GPT-6 路线作参照</td></tr>
+    </table>
+    <ul>
+      <li>种子集：50 个固定 seed × 白注起步；主配置达标后上金注黑牌组（GPT-6 bot 的标尺）；</li>
+      <li>双轨评估：<b>快速迭代用 balatro-gym</b>（无头、秒级、批量），<b>验收用真实游戏 + balatrobot</b>（保真度、记分可提交 Evalatro）；</li>
+      <li>指标：胜率、平均到达 Ante、score、单局成本($)、单步决策延迟、Tier 0/1/2 动作占比、Jev 置信度-正确率校准曲线、按决策点分桶的错误率（哪类决策最弱→迭代题目集）。</li>
+    </ul>
+
+    <h3><span class="no">8.3</span>题目集迭代流程</h3>
+    <p>日志 → 分桶错误率 → 修 rubric 措辞/加维度/调权重 → 固定种子回归 → 只留胜率提升的改动。<b>题目集就是本项目的"模型权重"，纳入版本管理。</b></p>
+  </section>
+
+  <!-- ============ 9 成本 ============ -->
+  <section id="s9">
+    <h2><span class="no">9</span>成本与延迟测算</h2>
+    <p>按单局（Ante 8 通关，~24–30 轮）估算：</p>
+    <table>
+      <tr><th>项</th><th>Jev 混合方案</th><th>纯 GPT-6 类 LLM</th></tr>
+      <tr><td>决策调用</td><td>~120 次（进商店/盲注各 1 次批量）</td><td>~400+ 步每步一次</td></tr>
+      <tr><td>每次输入</td><td>~1.5–2K tokens（紧凑 state）</td><td>~2–5K tokens（+生成）</td></tr>
+      <tr><td>单局输入 token</td><td>~0.2M → <b>$0.008</b></td><td>~1.5M+ 输出另计 → <b>$1–10</b></td></tr>
+      <tr><td>单步延迟</td><td>求解器 &lt;10ms；Jev 70–500ms（含 20+ 道题批量）</td><td>5–30s/步</td></tr>
+      <tr><td>单局 API 时间</td><td>~1 分钟</td><td>20–60 分钟</td></tr>
+    </table>
+    <blockquote><p>Jev 输出免费、限流 250K tok/s 对本场景等于无限制；即使全量 A/B 实验矩阵 250 局 ×5 配置也只要 ~$10。</p></blockquote>
+  </section>
+
+  <!-- ============ 10 风险 ============ -->
+  <section id="s10">
+    <h2><span class="no">10</span>风险与对策</h2>
+    <table>
+      <tr><th style="width:260px">风险</th><th style="width:150px">影响</th><th>对策</th></tr>
+      <tr><td>Jev 对游戏策略的判断力未知（非专门训练）</td><td>商店决策质量不达预期</td><td>架构上 Jev 只接模糊决策，精确层兜底；rubric 工程化迭代；8.2 的 C vs B 实验直接量化其增量</td></tr>
+      <tr><td>Jev 早期访问，API/行为可能变</td><td>线上断裂</td><td>走 OpenRouter <code>~typesafe/jev-latest</code> 双通道；SDK 锁版本；题目集与调用层解耦</td></tr>
+      <tr><td>state 序列化质量决定一切</td><td>判断漂移</td><td>释义库覆盖全部 150 小丑（社区 wiki 抓取生成），缺省回退到商品描述原文</td></tr>
+      <tr><td>游戏版本更新破坏 mod 链（Lovely/Steamodded/balatrobot 三层依赖）</td><td>停摆</td><td>锁定游戏版本（Steam beta 分支）；balatro-gym 快速轨不受影响</td></tr>
+      <tr><td>balatrobot debug 接口污染评测</td><td>成绩无效</td><td>评测配置硬禁用 <code>add</code>/<code>set</code>，记分器校验动作白名单</td></tr>
+      <tr><td>置信度路由阈值失准</td><td>过度升级 LLM 或过度保守</td><td>每次评测重画校准曲线调 τ；safe_default 设计保证保守侧错误无副作用</td></tr>
+      <tr><td>商业/合规</td><td>—</td><td>单机游戏、自购正版、本地 mod，社区惯例允许；不接入任何真实货币博弈场景</td></tr>
+    </table>
+  </section>
+
+  <!-- ============ 11 路线图 ============ -->
+  <section id="s11">
+    <h2><span class="no">11</span>实施路线图</h2>
+    <table>
+      <tr><th style="width:150px">里程碑</th><th style="width:70px">周期</th><th>交付物</th><th style="width:250px">验收标准</th></tr>
+      <tr><td><b>M1 基础设施</b></td><td>1–2 周</td><td>balatrobot 跑通；naive bot（配置 A）能完整打完一局；算分核与 balatro-calculator 对拍通过；JSONL 日志</td><td>配置 A 在 50 seed 上产出基线分布</td></tr>
+      <tr><td><b>M2 Jev 决策层</b></td><td>2–3 周</td><td>状态序列化器 + 小丑释义库；商店 composite scoring + 盲注 Noul 上线（配置 C）</td><td>C 的 score 均值 &gt; B（solver-only）；白注胜率 ≥ 40%</td></tr>
+      <tr><td><b>M3 方向识别与路由</b></td><td>2 周</td><td>archetype fan-out + 权重表切换 + 置信度路由 + 校准曲线；可选 LLM 兜底（配置 D）</td><td>白注稳定通关（≥70%）；D 的增量/成本比给出结论</td></tr>
+      <tr><td><b>M4 冲高与产出</b></td><td>持续</td><td>金注黑牌组挑战；Evalatro 提交；教练插件原型（screenshot + 建议浮层）</td><td>金注黑牌组至少 1 胜；公开技术报告</td></tr>
+    </table>
+  </section>
+
+  <!-- ============ 12 参考 ============ -->
+  <section id="s12">
+    <h2><span class="no">12</span>参考资料</h2>
+    <h3>Jev / TypeSafe AI</h3>
+    <ul class="refs">
+      <li><a href="https://typesafe.ai" target="_blank">TypeSafe AI 官方博客：Introducing System One Models &amp; Jev</a>（定价、延迟）</li>
+      <li><a href="https://docs.typesafe.ai/introduction/quickstart.md" target="_blank">官方文档 Quickstart</a> · <a href="https://docs.typesafe.ai/primitives.md" target="_blank">Primitives</a> · <a href="https://docs.typesafe.ai/patterns.md" target="_blank">Patterns</a> · <a href="https://docs.typesafe.ai/patterns/composite-scoring.md" target="_blank">Composite Scoring</a> · <a href="https://docs.typesafe.ai/patterns/confidence-routing.md" target="_blank">Confidence-Gated Routing</a></li>
+      <li><a href="https://openrouter.ai" target="_blank">OpenRouter: Jev 1.13</a></li>
+      <li><a href="https://mp.weixin.qq.com/s/r3hCizR8d-DY9K3H2iPSqw" target="_blank">微信原文：《一文看懂外网爆火的哑巴模型 jev，10 个实测案例分享》</a></li>
+    </ul>
+    <h3>Balatro AI 生态</h3>
+    <ul class="refs">
+      <li><a href="https://github.com/coder/balatrobot" target="_blank">coder/balatrobot（BalatroBot）</a> · <a href="https://coder.github.io/balatrobot/latest/" target="_blank">API 文档</a>（JSON-RPC @ 12346）</li>
+      <li><a href="https://github.com/alesha-pro/evalatro" target="_blank">alesha-pro/evalatro</a>（LLM 基准，记分协议） / <a href="https://evalatro.dev" target="_blank">evalatro.dev</a></li>
+      <li><a href="https://github.com/coder/balatrollm" target="_blank">coder/balatrollm</a>（官方 LLM bot）</li>
+      <li><a href="https://www.tomshardware.com/tech-industry/artificial-intelligence/ai-enthusiast-builds-gpt-6-astra-powered-bot-to-take-on-balatros-gold-stake-black-deck-bot-leverages-python-for-numerical-tools-beats-hardest-difficulty-repeatedly" target="_blank">Tom's Hardware：GPT-6 Astra 通关金注黑牌组</a></li>
+      <li><a href="https://github.com/cassiusfive/balatro-gym" target="_blank">cassiusfive/balatro-gym</a>（RL Gymnasium 环境）</li>
+      <li><a href="https://github.com/EFHIII/balatro-calculator" target="_blank">EFHIII/balatro-calculator</a>（精确算分器）</li>
+      <li><a href="https://github.com/Steamodded/smods" target="_blank">Steamodded/smods</a> · <a href="https://old.thunderstore.io/c/balatro/" target="_blank">Lovely (Thunderstore)</a></li>
+    </ul>
+    <p style="color:var(--muted);font-size:13px;margin-top:28px">小丑牌（Balatro）© LocalThunk · 本方案仅供技术研究，需自购 Steam 正版</p>
+  </section>
+
+</main>
+</div>
+
+<button id="backtop" title="回到顶部">↑</button>
+
+<script>
+  // 目录滚动高亮
+  const links = document.querySelectorAll('#tocNav a');
+  const secs  = [...document.querySelectorAll('main section')];
+  const byId  = {};
+  links.forEach(a => byId[a.getAttribute('href').slice(1)] = a);
+  const obs = new IntersectionObserver(es => {
+    es.forEach(e => {
+      if (e.isIntersecting) {
+        links.forEach(a => a.classList.remove('active'));
+        const a = byId[e.target.id];
+        if (a) { a.classList.add('active'); a.scrollIntoView({block:'nearest'}); }
+      }
+    });
+  }, { rootMargin: '-15% 0px -70% 0px' });
+  secs.forEach(s => obs.observe(s));
+
+  // 回到顶部
+  const btn = document.getElementById('backtop');
+  window.addEventListener('scroll', () => {
+    btn.style.display = window.scrollY > 600 ? 'block' : 'none';
+  });
+  btn.addEventListener('click', () => window.scrollTo({top:0, behavior:'smooth'}));
+</script>
+</body>
+</html>
