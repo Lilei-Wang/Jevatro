@@ -100,12 +100,18 @@ def run(seed: str | None = None, deck: str = "RED", stake: str = "WHITE") -> dic
                 plan = jev.shop_plan(gs)
                 if not plan:
                     break
-                step = plan[0]
-                gs = act(bot, log, gs, step["method"], extra={"why": step.get("why")}, **step["params"])
-                print(f"  [shop] {step['method']} {step['params']} ({step.get('why')})")
-                if step["method"] == "reroll":
-                    rerolls += 1
-                time.sleep(0.2)
+                rerolled = False
+                for step in plan:
+                    if gs.get("state") != "SHOP":
+                        break
+                    gs = act(bot, log, gs, step["method"], extra={"why": step.get("why")}, **step["params"])
+                    print(f"  [shop] {step['method']} {step['params']} ({step.get('why')})")
+                    if step["method"] == "reroll":
+                        rerolls += 1
+                        rerolled = True
+                    time.sleep(0.2)
+                if not rerolled:
+                    break  # 计划执行完且没重掷 → 离店（避免重复问询）
             gs = use_planets(bot, log, gs)
             gs = act(bot, log, gs, "next_round")
         elif state == "SMODS_BOOSTER_OPENED":

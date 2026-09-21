@@ -111,11 +111,12 @@ class JevLayer:
 
         # 可行性过滤（代码层硬约束）
         candidates = []   # (slot_id, card, kind)
+        slots_full = jokers_area.get("count", 0) >= jokers_area.get("limit", 5)
         for i, c in enumerate(shop_cards):
             cost = c.get("cost", {}).get("buy", 999)
             s = c.get("set")
-            if s == "JOKER" and jokers_area.get("count", 0) >= jokers_area.get("limit", 5):
-                continue
+            if s == "JOKER" and slots_full and not _sellable_jokers(jokers_area):
+                continue  # 槽满且无槽可腾时跳过（有可卖小丑时仍候选，由卖牌题决定）
             if s in ("PLANET", "TAROT", "SPECTRAL") and cons_area.get("count", 0) >= cons_area.get("limit", 2):
                 continue
             if s not in ("JOKER", "PLANET", "VOUCHER"):   # 本轮迭代: 塔罗/卡包暂不买
@@ -129,8 +130,11 @@ class JevLayer:
         state_text = serialize(gs)
         questions: dict = {}
 
-        # 1) archetype fan-out（Noul 批量）
-        for k, desc in ARCHETYPES.items():
+        # 1) archetype fan-out（Noul 批量）——早期战力优先：金币少或小丑不足时禁用 econ 方向
+        arch_candidates = dict(ARCHETYPES)
+        if gs.get("money", 0) < 15 or len(jokers_area.get("cards", [])) < 3:
+            arch_candidates.pop("econ", None)
+        for k, desc in arch_candidates.items():
             questions[f"arch_{k}"] = _noul(desc)
 
         # 2) 每个候选商品 4 维 Score
@@ -140,6 +144,13 @@ class JevLayer:
             for dim, meaning in DIMS.items():
                 questions[f"{slot}__{dim}"] = _score(
                     f"商品[{name}, ${price}] 的{meaning}", RUBRIC[dim])
+
+        # 3) 槽满且有候选小丑时：卖谁腾位（Choice，一个问题定）
+        sellable = _sellable_jokers(jokers_area)
+        if slots_full and sellable and any(k == "JOKER" for _, _, k in all_items):
+            criteria = {f"j{i}": card_name(j) for i, j in enumerate(sellable)}
+            questions["sell_which"] = _choice(
+                "若要买入新小丑必须先卖掉一个现有小丑, 卖掉损失最小的是", criteria)
 
         # 3) 重掷判断（商店无货时的备选）
         questions["reroll_worth"] = _noul(
@@ -161,7 +172,7 @@ class JevLayer:
         a = resp.answers
         # archetype → argmax（超过阈值的最高项，否则 default）
         arch = "default"
-        best_arch = max(ARCHETYPES, key=lambda k: a[f"arch_{k}"].noul)
+        best_arch = max(arch_candidates, key=lambda k: a[f"arch_{k}"].noul)
         if a[f"arch_{best_arch}"].noul >= ARCHETYPE_TAU:
             arch = best_arch
         w_arch = WEIGHTS.get(arch, WEIGHTS["default"])
@@ -191,6 +202,18 @@ class JevLayer:
                 continue
             if it["value"] < BUY_VALUE_TAU:
                 continue
+            if it["kind"] == "JOKER" and slots_full:
+                # 槽满：只有价值明显更高才值得卖旧换新
+                if it["value"] < 0.58 or "sell_which" not in a:
+                    continue
+                sell_key = a["sell_which"].choice
+                if not sell_key or not sell_key.startswith("j"):
+                    continue
+                plan.append({"method": "sell", "params": {"joker": int(sell_key[1:])},
+                             "why": f"腾位给 {it['card'].get('key')} "
+                                    f"(value={it['value']:.2f}, jev卖牌选择={sell_key})"})
+                money += sellable[int(sell_key[1:])].get("cost", {}).get("sell", 1)
+                slots_full = False
             if it["slot"].startswith("voucher"):
                 method, params = "buy", {"voucher": int(it["slot"][7:])}
             else:
@@ -245,6 +268,23 @@ class JevLayer:
 def _noul(instructions):
     from typesafe_sdk import Noul
     return Noul(instructions=instructions)
+
+
+def _choice(instructions, criteria):
+    from typesafe_sdk import Choice
+    return Choice(instructions=instructions, criteria=criteria)
+
+
+def _sellable_jokers(jokers_area: dict) -> list[dict]:
+    """可卖小丑（排除永恒 eternal 标记）。"""
+    out = []
+    for j in jokers_area.get("cards", []):
+        m = j.get("modifier")
+        mods = set(m) if isinstance(m, list) else set()
+        if "eternal" in mods:
+            continue
+        out.append(j)
+    return out
 
 
 def _score(instructions, criteria):

@@ -16,17 +16,25 @@ MAX_ACTIONS = 4000
 
 
 def act(bot, log, before: dict, method: str, raise_on_error: bool = False, **params) -> dict:
-    """执行动作并记录；默认失败时返回当前 gamestate 而不是崩掉。"""
-    try:
-        after = bot.call(method, **params)
-        log.action(method, params, before, after)
-        return after
-    except BalatroError as e:
-        after = bot.gamestate()
-        log.action(method, params, before, after, error=str(e))
-        if raise_on_error:
-            raise
-        return after
+    """执行动作并记录；默认失败时返回当前 gamestate 而不是崩掉。
+
+    "buttons not ready"（发牌动画竞态）自动等待重试。
+    """
+    for attempt in range(9):
+        try:
+            after = bot.call(method, **params)
+            log.action(method, params, before, after)
+            return after
+        except BalatroError as e:
+            if "not ready" in str(e) and attempt < 8:
+                time.sleep(0.6)
+                continue
+            after = bot.gamestate()
+            log.action(method, params, before, after, error=str(e))
+            if raise_on_error:
+                raise
+            return after
+    return bot.gamestate()
 
 
 def shop_policy(gs: dict) -> list[tuple[str, dict]]:
