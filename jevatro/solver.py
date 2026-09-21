@@ -65,6 +65,19 @@ def best_play(gamestate: dict) -> dict:
     ranked.sort(key=lambda x: -x["total"])
     best = ranked[0] if ranked else None
 
+    # 无合法组合（极端约束叠加/换牌动画间隙）：退化为前 min(5) 张
+    if best is None:
+        n = min(5, len(hand_cards))
+        if n == 0:
+            return {"indices": [], "hand": "-", "chips": 0, "mult": 0, "total": 0,
+                    "need": _current_blind_score(gs), "can_clear": False,
+                    "rules": {k: v for k, v in rules.items() if v not in (None, False)}}
+        combo = list(range(n))
+        played = [hand_cards[i] for i in combo]
+        name, scoring_idx = evaluate_hand(played)
+        best = {"indices": combo,
+                **score_play(played, scoring_idx, name, hand_levels, jokers, ctx)}
+
     # The Ox：打"最多使用牌型"会清空金币 → 有近似替代时避开
     if best and rules.get("ox"):
         victim = most_played_hand(gs)

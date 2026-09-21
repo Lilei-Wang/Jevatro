@@ -34,8 +34,10 @@ def batch(n_seeds: int = 5) -> list[dict]:
                     "money": gs.get("money"), "n_jokers": (gs.get("jokers") or {}).get("count"),
                     "wall_s": round(time.time() - t0, 1),
                 })
-            except SystemExit as e:
-                rows.append({"seed": seed, "config": tag, "error": str(e)})
+            except Exception as e:  # 单局崩溃不炸整批，记录后继续
+                rows.append({"seed": seed, "config": tag, "error": f"{type(e).__name__}: {e}"})
+                import traceback
+                traceback.print_exc()
             time.sleep(2)
     _write_summary(rows)
     return rows
