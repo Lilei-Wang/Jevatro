@@ -92,7 +92,63 @@
 
 ---
 
-## 环境与复现速查
+## 第三轮迭代（2026-09-22 凌晨）—— git 环境 + 规则引擎 + 3 轮连续迭代
+
+### 0. git 环境
+- 安装 Git 2.55（winget），`git init -b main`，本地身份 `WangLillei <wanglillei@users.noreply.github.com>`
+  （**推 GitHub 前请改成你自己的邮箱**）。
+- `.gitignore`：`.env`（API key 永不入库）、`_downloads/`、`logs/*.jsonl`；`.env.example` 提供模板。
+- 首次提交 `ebee32a`：方案 + jevatro M1/M2 全部代码（24 文件）。
+- **推 GitHub 步骤**：在 GitHub 新建空仓库后执行
+  `git remote add origin https://github.com/<你的用户名>/<仓库名>.git && git push -u origin main`
+
+### 1. 迭代 3：Boss 盲规则引擎（commit 见 log）
+**问题实锤**：The Psychic（必须出5张）下，bot 出 4 张牌 API 不报错但 **0 分白烧一手**（chips 0→0 还扣手数）。
+**方案**：`rules.py` 把 17 类 Boss 约束前置于求解器枚举层：
+- The Psychic → 只枚举 5 张组合；
+- 花色 Boss（Club/Goad/Head/Window）→ 该花色弱化牌 0 筹码 0 效果（仍计牌型，符合游戏规则）；
+- The Eye / The Mouth → 牌型白名单/黑名单过滤（用 `played_this_round` 数据）；
+- The Arm / The Flint → 牌型等级修正（BASE_AND_INC 表按级增量回算）；
+- The Ox → 打"最多使用牌型"会清金币，有 ≥90% 替代时避开。
+- 另加**弃牌策略** `best_discard`：打不过时保留最优组合方向（同花≥3/同点数≥2），弃边缘牌≤5张。
+**验证**：JEVATRO1 The Psychic 轮全 5 张、每手有分（0→380→1268），白烧手根除；达 ante2 r6。
+**测试**：`test_rules.py` 6 组断言全过。
+
+### 2. 迭代 4：商店策略升级 + 竞态修复
+- **早期战力优先**：金币<15 或小丑<3 时禁用 econ 方向（fan-out 里偏热）；
+- **卖牌腾位**：槽满时加 Jev Choice 题"卖谁损失最小"，新小丑 value≥0.58 才换；
+- **动态小丑估值**：补 36 张成长型小丑的中局近似值（green_joker/ride_the_bus/obelisk/photograph/baron 等），
+  之前按 0 计导致低估弃买；
+- **balatrobot buttons 竞态修复**（上游 bug ×2）：发牌动画中调 play/discard 时 `G.buttons` 为 nil
+  → Lua 崩溃 → 客户端无限重试 51 次非法。mod 端（play.lua/discard.lua）补 `if not G.buttons then 返回可重试错误`，
+  客户端 `act()` 对 "not ready" 自动等待 0.6s×8 重试。修复后 0 非法。
+
+### 3. 迭代 5：多种子 A/B 批量（`batch_runner.py`）
+**5 种子 × 2 配置首轮结果**（修复前）：
+
+| 种子 | naive | jev | 胜者 |
+|---|---|---|---|
+| JEVATRO1 | ante2 r5 | ante2 r6 | jev |
+| JEVATRO2 | ante2 r5 | ante2 r6 | jev |
+| JEVATRO3 | **ante3 r9** | ante2 r4 | naive |
+| JEVATRO4 | ante4 r12 | **ante5 r13**（3非法） | jev |
+| JEVATRO5 | ante1 r3 | ante1 r3 | 平（坏种子） |
+| **平均 Ante** | **2.40** | **2.40** | 打平 |
+
+**暴露的两个 bug + 一条策略**：
+1. **多买索引位移**：一次计划买多张 → 第二张用旧索引（`-32001 Card index out of range`）和过期槽位判断
+   → 修复：每计划限 1 张卡牌 + 1 张兑换券（卖+买可共存），执行后重新规划，状态签名防死循环；
+2. **Jev 过于保守**：JEVATRO3 只买 3 件（naive 见啥买啥反而 ante3）→ 修复：小丑<3 时 JOKER 阈值 0.40→0.32；
+3. JEVATRO5 是坏种子（ante1 Boss 需 600），两配置同样死于 ante1。
+
+**修复后复验（3 种子）**：全部 **0 非法**；JEVATRO4 = **ante4 r12**（25 次 Jev 调用 14.7s，单手 5478），
+JEVATRO3 = ante2 r4，JEVATRO5 = ante1 r3。
+
+### 4. 本轮结论（诚实评估）
+- **正确性**：白烧手/非法动作全部根除（0 illegal 稳定），规则引擎 + 竞态修复 + 索引修复是确定性收益；
+- **战绩**：单种子峰值 ante4~5，平均与 naive 打平——**Jev 层的边际胜率价值尚未证明**（M2 验收标准
+  "C 的 score 均值 > B" 未达成），瓶颈在题目集/权重还需要按 §8.3 的分桶错误率流程迭代，
+  以及缺少 Tarot/卡包/弃牌方向的 Jev 决策（第三轮迭代范围外）。
 
 ```bash
 # 启动游戏（带 mod，自动监听 12346）

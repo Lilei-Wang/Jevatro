@@ -196,11 +196,25 @@ class JevLayer:
                            "conf": min_conf, "dims": dims})
 
         plan = []
+        card_buy_planned = False
+        voucher_buy_planned = False
+        # 早期小丑稀缺（<3张）：几乎任何能买的小丑都值得要（naive基线实证）
+        n_jokers = len(jokers_area.get("cards", []))
+        joker_tau = 0.32 if n_jokers < 3 else BUY_VALUE_TAU
         for it in sorted(scored, key=lambda x: -x["value"]):
             price = it["card"].get("cost", {}).get("buy", 0)
             if price > money:
                 continue
-            if it["value"] < BUY_VALUE_TAU:
+            tau = joker_tau if it["kind"] == "JOKER" else BUY_VALUE_TAU
+            if it["value"] < tau:
+                continue
+            is_voucher = it["slot"].startswith("voucher")
+            # 每次计划最多一张卡牌 + 一张兑换券：购买会移位商店索引/占用槽位，
+            # 多张会用到过期索引（实测 -32001 Card index out of range）
+            if is_voucher:
+                if voucher_buy_planned:
+                    continue
+            elif card_buy_planned:
                 continue
             if it["kind"] == "JOKER" and slots_full:
                 # 槽满：只有价值明显更高才值得卖旧换新
@@ -214,10 +228,12 @@ class JevLayer:
                                     f"(value={it['value']:.2f}, jev卖牌选择={sell_key})"})
                 money += sellable[int(sell_key[1:])].get("cost", {}).get("sell", 1)
                 slots_full = False
-            if it["slot"].startswith("voucher"):
+            if is_voucher:
                 method, params = "buy", {"voucher": int(it["slot"][7:])}
+                voucher_buy_planned = True
             else:
                 method, params = "buy", {"card": int(it["slot"][4:])}
+                card_buy_planned = True
             plan.append({"method": method, "params": params,
                          "why": f"{it['card'].get('key')} value={it['value']:.2f} "
                                 f"conf={it['conf']:.2f} arch={arch}"})

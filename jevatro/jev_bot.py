@@ -32,6 +32,13 @@ def use_planets(bot, log, gs: dict) -> dict:
     return gs
 
 
+def _shop_sig(gs: dict) -> tuple:
+    shop = gs.get("shop") or {}
+    return (gs.get("money"), (gs.get("jokers") or {}).get("count"),
+            tuple(sorted((c.get("key"), c.get("cost", {}).get("buy"))
+                         for c in shop.get("cards", []))))
+
+
 def run(seed: str | None = None, deck: str = "RED", stake: str = "WHITE") -> dict:
     bot = BalatroClient()
     if not bot.wait_online(tries=5):
@@ -96,7 +103,9 @@ def run(seed: str | None = None, deck: str = "RED", stake: str = "WHITE") -> dic
             gs = act(bot, log, gs, "cash_out")
         elif state == "SHOP":
             rerolls = 0
-            while gs.get("state") == "SHOP" and rerolls <= REROLL_PER_SHOP:
+            fails = 0
+            while gs.get("state") == "SHOP" and rerolls <= REROLL_PER_SHOP and fails < 2:
+                sig = _shop_sig(gs)
                 plan = jev.shop_plan(gs)
                 if not plan:
                     break
@@ -110,8 +119,11 @@ def run(seed: str | None = None, deck: str = "RED", stake: str = "WHITE") -> dic
                         rerolls += 1
                         rerolled = True
                     time.sleep(0.2)
-                if not rerolled:
-                    break  # 计划执行完且没重掷 → 离店（避免重复问询）
+                # 买入后重新规划（每计划限一张防索引位移）；签名不变=无进展，防死循环
+                if not rerolled and _shop_sig(gs) == sig:
+                    fails += 1
+                else:
+                    fails = 0
             gs = use_planets(bot, log, gs)
             gs = act(bot, log, gs, "next_round")
         elif state == "SMODS_BOOSTER_OPENED":
