@@ -10,6 +10,7 @@ import time
 
 from serializer import card_name, serialize, solver_facts
 from solver import best_play
+from use_policy import NO_BUY
 
 # ---------------------------------------------------------------------------
 # 环境
@@ -117,10 +118,13 @@ class JevLayer:
             s = c.get("set")
             if s == "JOKER" and slots_full and not _sellable_jokers(jokers_area):
                 continue  # 槽满且无槽可腾时跳过（有可卖小丑时仍候选，由卖牌题决定）
-            if s in ("PLANET", "TAROT", "SPECTRAL") and cons_area.get("count", 0) >= cons_area.get("limit", 2):
-                continue
-            if s not in ("JOKER", "PLANET", "VOUCHER"):   # 本轮迭代: 塔罗/卡包暂不买
-                continue
+            if s in ("PLANET", "TAROT", "SPECTRAL"):
+                if cons_area.get("count", 0) >= cons_area.get("limit", 2):
+                    continue
+                if c.get("key") in NO_BUY:   # 无安全用法的消耗牌不买
+                    continue
+            if s not in ("JOKER", "PLANET", "VOUCHER", "TAROT", "SPECTRAL"):
+                continue  # 卡包等暂不买
             candidates.append((f"item{i}", c, s))
 
         vouchers = [(f"voucher{i}", v, "VOUCHER") for i, v in

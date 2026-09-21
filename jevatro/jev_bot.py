@@ -13,23 +13,10 @@ from jev_layer import JevLayer
 from logger import RunLogger
 from naive_bot import act
 from solver import best_play, best_discard
+import use_policy
 
 MAX_ACTIONS = 4000
 REROLL_PER_SHOP = 2
-
-
-def use_planets(bot, log, gs: dict) -> dict:
-    """把消耗区的 Planet 立即用掉（升级牌型，无需目标）。"""
-    attempts = len(gs.get("consumables", {}).get("cards", [])) + 1
-    while gs.get("state") == "SHOP" and attempts > 0:
-        attempts -= 1
-        cons = gs.get("consumables", {}).get("cards", [])
-        idx = next((i for i, c in enumerate(cons) if c.get("set") == "PLANET"), None)
-        if idx is None:
-            break
-        gs = act(bot, log, gs, "use", consumable=idx)
-        time.sleep(0.2)
-    return gs
 
 
 def _shop_sig(gs: dict) -> tuple:
@@ -77,6 +64,8 @@ def run(seed: str | None = None, deck: str = "RED", stake: str = "WHITE") -> dic
             gs = act(bot, log, gs, action, extra={"why": why})
             print(f"  [blind] {action} ({why})")
         elif state == "SELECTING_HAND":
+            # 先把需要手牌目标的消耗牌用掉（强化最佳卡/转花色/瘦身等）
+            gs = use_policy.apply(bot, log, gs, phase="HAND")
             bp = best_play(gs)
             # 打不过且有弃牌余量：先挖牌（保方向弃边缘），两手以上才值得弃
             if (not bp["can_clear"]
@@ -124,7 +113,7 @@ def run(seed: str | None = None, deck: str = "RED", stake: str = "WHITE") -> dic
                     fails += 1
                 else:
                     fails = 0
-            gs = use_planets(bot, log, gs)
+            gs = use_policy.apply(bot, log, gs, phase="SHOP")  # 星球/金钱塔罗等
             gs = act(bot, log, gs, "next_round")
         elif state == "SMODS_BOOSTER_OPENED":
             gs = act(bot, log, gs, "pack", skip=True)
