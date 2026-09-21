@@ -218,13 +218,16 @@ def score_play(
     hand_levels: dict,
     jokers: list[dict],
     ctx: dict,
+    debuff_idx: set[int] | None = None,
 ) -> dict:
+    """debuff_idx: 被弱化的出牌下标（0 筹码、无卡牌效果，但计入牌型）。"""
+    debuff_idx = debuff_idx or set()
     base = hand_levels.get(hand_name) or {"chips": 5, "mult": 1}
     chips = float(base["chips"])
     mult_add = float(base["mult"])
     mult_mul = 1.0
 
-    scoring = [played[i] for i in scoring_idx]
+    scoring = [played[i] for i in scoring_idx if i not in debuff_idx]
     for cd in scoring:
         chips += _card_chips(cd) + _enh_chips(cd)
         a, m = _card_mult(cd)

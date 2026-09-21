@@ -10,7 +10,7 @@ import time
 
 from client import BalatroClient, BalatroError
 from logger import RunLogger
-from solver import best_play
+from solver import best_play, best_discard
 
 MAX_ACTIONS = 4000
 
@@ -79,11 +79,21 @@ def run(seed: str | None = None, deck: str = "RED", stake: str = "WHITE") -> dic
             gs = act(bot, log, gs, "select")
         elif state == "SELECTING_HAND":
             bp = best_play(gs)
+            if (not bp["can_clear"]
+                    and gs.get("round", {}).get("discards_left", 0) > 0
+                    and gs.get("round", {}).get("hands_left", 0) >= 2):
+                d = best_discard(gs)
+                if d:
+                    gs = act(bot, log, gs, "discard", cards=d,
+                             extra={"why": f"dig: best={bp['total']:.0f}/need={bp['need']}"})
+                    print(f"  [ante {gs.get('ante_num')} r{gs.get('round_num')}] "
+                          f"discard {d} (best={bp['total']:.0f} < {bp['need']})")
+                    time.sleep(0.1)
+                    continue
             try:
                 gs = act(bot, log, gs, "play", raise_on_error=True, cards=bp["indices"],
                          extra={"solver": {k: bp[k] for k in ("hand", "chips", "mult", "total")}})
             except BalatroError as e:
-                # Boss 盲约束（如 The Psychic 必须出5张）：退化为前5张
                 hand_n = len(gs.get("hand", {}).get("cards", []))
                 gs = act(bot, log, gs, "play", cards=list(range(min(5, hand_n))),
                          extra={"solver_fallback": str(e)})

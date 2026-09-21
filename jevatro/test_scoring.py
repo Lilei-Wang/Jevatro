@@ -3,9 +3,13 @@ from scoring import evaluate_hand, score_play
 
 
 def C(suit, rank, enh=None, ed=None):
+    m = []
+    if enh:
+        m.append(enh)
+    if ed:
+        m.append(ed)
     return {"key": f"{suit}_{rank}", "value": {"suit": suit, "rank": rank},
-            "modifier": {"seal": None, "edition": ed, "enhancement": enh,
-                         "eternal": False, "perishable": None, "rental": False}}
+            "modifier": m, "state": []}
 
 
 L1 = {"Pair": {"chips": 10, "mult": 2}, "Flush": {"chips": 35, "mult": 4},

@@ -12,7 +12,7 @@ from client import BalatroClient, BalatroError
 from jev_layer import JevLayer
 from logger import RunLogger
 from naive_bot import act
-from solver import best_play
+from solver import best_play, best_discard
 
 MAX_ACTIONS = 4000
 REROLL_PER_SHOP = 2
@@ -71,6 +71,18 @@ def run(seed: str | None = None, deck: str = "RED", stake: str = "WHITE") -> dic
             print(f"  [blind] {action} ({why})")
         elif state == "SELECTING_HAND":
             bp = best_play(gs)
+            # 打不过且有弃牌余量：先挖牌（保方向弃边缘），两手以上才值得弃
+            if (not bp["can_clear"]
+                    and gs.get("round", {}).get("discards_left", 0) > 0
+                    and gs.get("round", {}).get("hands_left", 0) >= 2):
+                d = best_discard(gs)
+                if d:
+                    gs = act(bot, log, gs, "discard", cards=d,
+                             extra={"why": f"dig: best={bp['total']:.0f}/need={bp['need']}"})
+                    print(f"  [ante {gs.get('ante_num')} r{gs.get('round_num')}] "
+                          f"discard {d} (best={bp['total']:.0f} < {bp['need']})")
+                    time.sleep(0.1)
+                    continue
             try:
                 gs = act(bot, log, gs, "play", raise_on_error=True, cards=bp["indices"],
                          extra={"solver": {k: bp[k] for k in ("hand", "chips", "mult", "total")}})
