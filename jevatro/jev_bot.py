@@ -116,7 +116,11 @@ def run(seed: str | None = None, deck: str = "RED", stake: str = "WHITE") -> dic
             gs = use_policy.apply(bot, log, gs, phase="SHOP")  # 星球/金钱塔罗等
             gs = act(bot, log, gs, "next_round")
         elif state == "SMODS_BOOSTER_OPENED":
-            gs = act(bot, log, gs, "pack", skip=True)
+            idx, why = jev.pack_pick(gs)
+            if idx is not None:
+                gs = act(bot, log, gs, "pack", card=idx, extra={"why": why})
+            else:
+                gs = act(bot, log, gs, "pack", skip=True, extra={"why": why})
         else:
             time.sleep(0.5)
             gs = bot.gamestate()

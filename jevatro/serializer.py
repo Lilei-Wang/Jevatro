@@ -90,6 +90,10 @@ def serialize(gs: dict, extra_facts: str = "") -> str:
             entries.append(f"{card_name(c)} ${c.get('cost', {}).get('buy', '?')}")
         lines.append(f"[商店] " + " ; ".join(entries))
 
+    pack_cards = gs.get("pack", {}).get("cards", [])
+    if pack_cards:
+        lines.append(f"[开包可选] " + " | ".join(card_name(c) for c in pack_cards))
+
     voucher = gs.get("vouchers", {}).get("cards", [])
     if voucher:
         lines.append(f"[兑换券] " + " | ".join(card_name(v) for v in voucher))

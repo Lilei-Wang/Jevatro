@@ -55,19 +55,24 @@ DIMS = {
     "synergy":  "该商品与现有小丑/牌型等级的协同程度",
     "scaling":  "该商品的长期成长性(以本局剩余周目视角)",
     "economy":  "该商品对金钱/利息循环的贡献",
-    "immediate": "该商品立刻缓解当前战力缺口(能否过关)的程度",
+    "immediate": "该商品对接下来1-2个盲注得分能力的提升程度",
 }
 RUBRIC = {
     "synergy":  ["0 与现有构筑零交互甚至冲突", "1 略相关但方向不符", "2 中性填充",
                  "3 明确加强现有方向", "4 核心拼图,改变战力曲线"],
-    "scaling":  ["0 无成长", "1 一次性", "2 轻微成长", "3 稳定成长", "4 复利式成长"],
+    "scaling":  ["0 无成长", "1 一次性收益", "2 轻微成长", "3 每轮稳定成长", "4 复利式成长"],
     "economy":  ["0 纯花钱无回报", "1 略亏", "2 回本", "3 产出大于成本", "4 直接利息引擎"],
-    "immediate": ["0 无助", "1 微弱", "2 有些帮助", "3 明显", "4 本回合就靠它"],
+    "immediate": ["0 对得分完全无助", "1 略有帮助", "2 有一定帮助", "3 显著提升近期得分",
+                  "4 立刻改变能否过关"],
 }
 
 BUY_VALUE_TAU = 0.40    # 综合价值阈值（置信度仅记录不门控：实测 conf=0.0 是"无信号"非"不可靠"）
 ARCHETYPE_TAU = 0.50    # 方向识别的 noul 阈值
 BLEND_DEFAULT = 0.5     # 方向权重与 default 各占一半（防止 econ 方向过度稀释战力权重）
+
+# 可买的卡包：小丑包(加槽)/标准牌包(进牌组)/天体包(星球即用)；
+# 塔罗包/幻灵包开包需即时选目标，暂不买
+BUYABLE_PACK_PREFIXES = ("p_buffoon", "p_standard", "p_celestial")
 
 
 class JevLayer:
@@ -123,8 +128,11 @@ class JevLayer:
                     continue
                 if c.get("key") in NO_BUY:   # 无安全用法的消耗牌不买
                     continue
-            if s not in ("JOKER", "PLANET", "VOUCHER", "TAROT", "SPECTRAL"):
-                continue  # 卡包等暂不买
+            if s == "BOOSTER":
+                if not c.get("key", "").startswith(BUYABLE_PACK_PREFIXES):
+                    continue  # 塔罗包/幻灵包暂不买
+            if s not in ("JOKER", "PLANET", "VOUCHER", "TAROT", "SPECTRAL", "BOOSTER"):
+                continue
             candidates.append((f"item{i}", c, s))
 
         vouchers = [(f"voucher{i}", v, "VOUCHER") for i, v in
@@ -235,6 +243,9 @@ class JevLayer:
             if is_voucher:
                 method, params = "buy", {"voucher": int(it["slot"][7:])}
                 voucher_buy_planned = True
+            elif it["kind"] == "BOOSTER":
+                method, params = "buy", {"pack": int(it["slot"][4:])}
+                card_buy_planned = True  # 买包即开包，同样使商店索引位移
             else:
                 method, params = "buy", {"card": int(it["slot"][4:])}
                 card_buy_planned = True
@@ -249,6 +260,30 @@ class JevLayer:
                 plan.append({"method": "reroll", "params": {},
                              "why": f"jev reroll noul={a['reroll_worth'].noul:.2f}"})
         return plan
+
+    # ------------------------------------------------------------------
+    def pack_pick(self, gs: dict) -> tuple[int | None, str]:
+        """开包：一次 Choice 问"对当前构筑最有价值的一张"。返回 (下标|None, why)。"""
+        pack_cards = gs.get("pack", {}).get("cards", [])
+        if not pack_cards:
+            return None, "空包跳过"
+        state_text = serialize(gs)
+        criteria = {f"p{i}": card_name(c) for i, c in enumerate(pack_cards)}
+        try:
+            resp = self.ask(state_text, {
+                "pick": _choice("开包选择:对当前构筑(小丑/牌型等级/商店经济)最有价值的一张是", criteria),
+            })
+            a = resp.answers["pick"]
+            ch = a.choice
+            if ch and ch.startswith("p") and ch[1:].isdigit() and int(ch[1:]) < len(pack_cards):
+                return int(ch[1:]), (f"jev choice {pack_cards[int(ch[1:])].get('key')} "
+                                     f"conf={getattr(a, 'confidence', 0):.2f}")
+            return None, f"jev 选择无效({ch}) → 跳过"
+        except Exception as e:
+            self.failed += 1
+            if self.log:
+                self.log.log("jev_error", error=str(e), fallback="pack_skip")
+            return None, "jev_failed → 跳过"
 
     # ------------------------------------------------------------------
     def blind_decision(self, gs: dict) -> tuple[str, str]:
