@@ -205,10 +205,11 @@ class JevLayer:
         plan = []
         card_buy_planned = False
         voucher_buy_planned = False
-        # 死因分析结论：深局囤钱至死（死时均值$46）——超利息上限后放宽购买
+        # 迭代8教训：超息时全局降阈值(0.30)是净负面——死时金币$6且ante反降,
+        # 钱砸在平庸小丑上; 囤钱的正解是买"确定性升级"(星球/好塔罗)而非泛买。
+        # 故只保留早期小丑稀缺放宽, 富裕时不降阈值(交给state经济警示让Jev自己权衡)
         n_jokers = len(jokers_area.get("cards", []))
-        rich = gs.get("money", 0) >= 26
-        joker_tau = 0.30 if (n_jokers < 3 or rich) else BUY_VALUE_TAU
+        joker_tau = 0.32 if n_jokers < 3 else BUY_VALUE_TAU
         for it in sorted(scored, key=lambda x: -x["value"]):
             price = it["card"].get("cost", {}).get("buy", 0)
             if price > money:

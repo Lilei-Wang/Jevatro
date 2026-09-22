@@ -64,9 +64,10 @@ def serialize(gs: dict, extra_facts: str = "") -> str:
                      f"不产生利息，应尽快转化为战力")
     # 无 X 倍率警示：后程需求指数增长，纯加算小丑会乏力
     from scoring import JOKER_EFFECTS
+    jok_cards = (gs.get("jokers") or {}).get("cards", [])
     has_x = any(JOKER_EFFECTS.get(j.get("key", ""), ("",))[0].startswith(("xmult", "contains_xmult", "xmult_per", "per_card_rank_xmult"))
-                for j in (gs.get("jokers") or {}).get("cards", []))
-    if jokers and not has_x:
+                for j in jok_cards)
+    if jok_cards and not has_x:
         lines.append("[战力警示] 当前没有任何X倍率小丑, 后续盲注需求指数增长, "
                      "加算类小丑会越来越吃力, X倍率商品优先级应提高")
     lines.append(f"[盲注] {_blind_line(gs)}")
