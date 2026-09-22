@@ -360,3 +360,18 @@ JSON 偶发截断。旗舰 LLM 上限（公开：GPT-6 bot 金注通关）需充
 **Jev 五大优势**（已写入报告 §4.5）：快12倍/零失败/输出免费且结构化/批量并行/战绩第一且更稳。
 **DeepSeek 反向证据**（诚实记录）：JEVATRO3（Jev 失误局）反超到 ante4、JEVATRO8 达 ante5
 （全场最深）——思考型残局推理是真实优势，Tier 2 定位依据。
+
+
+---
+
+## 第九轮迭代（2026-09-22 晚）—— Agent Lab 观测台（参考 Jev Tetris 风格）
+
+- dashboard.py 全面重写为深色 observability 风格（参考用户提供的 Jev Tetris 界面）：
+  - 左栏 01 PLAYGROUND：实时游戏截图（balatrobot screenshot 代理，3s 缓存）+
+    实时局面（gamestate 代理：Ante/轮/金币/chips 需求比/盲注效果）+
+    手牌可视化（花色着色 + 修饰标记）+ 小丑列表；
+  - 右栏 02 DECISION STREAM · LIVE：统计条（动作数/Jev+LLM 调用/平均耗时/tokens）+
+    决策流卡片（ACTION/JEV/LLM/失败/终局分色标签，点击展开请求原文与回答，
+    Jev 卡含每题答案+置信度条，LLM 卡含 PROMPT/REPLY，一键复制）；
+  - 顶栏：109 局历史下拉（含进行中标记）+ 跟随最新 + balatrobot 连接状态灯；
+  - 浏览器实测 + 视觉模型评估通过（可发布 MVP 质量）。
