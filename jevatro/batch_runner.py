@@ -2,19 +2,34 @@
 
 用法: python batch_runner.py [种子数]     # 默认 5 个种子（JEVATRO1..N）
 前提: 带 balatrobot 的游戏运行中。输出 logs/batch_summary.md + JSON。
+说明: 检测到游戏冻结（UI 事件循环停摆）时自动重启游戏自愈后继续。
 """
 from __future__ import annotations
 
-import io
 import json
+import os
+import subprocess
 import sys
 import time
 from pathlib import Path
 
 import jev_bot
 import naive_bot
+from client import BalatroClient
 
 LOGS = Path(__file__).parent / "logs"
+GAME_EXE = r"D:\software\Steam\steamapps\common\Balatro\Balatro.exe"
+
+
+def restart_game() -> bool:
+    """强杀并重启游戏（冻结自愈），等待 API 上线。"""
+    print("[heal] 游戏冻结，重启游戏…", flush=True)
+    subprocess.run(["taskkill", "/im", "Balatro.exe", "/f"],
+                   capture_output=True)
+    time.sleep(4)
+    os.startfile(GAME_EXE)  # noqa: P101
+    bot = BalatroClient()
+    return bot.wait_online(tries=40, delay=2.0)
 
 
 def batch(n_seeds: int = 5) -> list[dict]:
@@ -38,6 +53,12 @@ def batch(n_seeds: int = 5) -> list[dict]:
                 rows.append({"seed": seed, "config": tag, "error": f"{type(e).__name__}: {e}"})
                 import traceback
                 traceback.print_exc()
+            # 冻结自愈：该局因游戏 UI 停摆而放弃 → 重启游戏
+            if getattr(run, "last_frozen", False):
+                rows.append({"seed": seed, "config": tag, "error": "frozen(已重启游戏)"})
+                if not restart_game():
+                    print("[fatal] 游戏重启失败，终止批量", flush=True)
+                    break
             time.sleep(2)
     _write_summary(rows)
     return rows

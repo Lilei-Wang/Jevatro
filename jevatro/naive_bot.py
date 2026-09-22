@@ -82,6 +82,7 @@ def shop_policy(gs: dict) -> list[tuple[str, dict]]:
 
 
 def run(seed: str | None = None, deck: str = "RED", stake: str = "WHITE") -> dict:
+    run.last_frozen = False
     bot = BalatroClient()
     if not bot.wait_online(tries=5):
         raise SystemExit("balatrobot 不可达：请先启动带 mod 的 Balatro")
@@ -113,6 +114,7 @@ def run(seed: str | None = None, deck: str = "RED", stake: str = "WHITE") -> dic
         if stuck >= 8:
             log.log("frozen", sig=cur_sig, actions=n)
             print(f"[frozen] 状态连续 {stuck} 轮无进展，放弃本局")
+            run.last_frozen = True
             break
 
         if state == "GAME_OVER":
