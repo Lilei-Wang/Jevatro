@@ -43,6 +43,12 @@ class RunLogger:
         self.log("jev", state=state, questions=questions,
                  answers=answers, latency=latency)
 
+    def llm(self, model: str, prompt: str, reply: str, latency: float,
+            in_tokens: int, out_tokens: int):
+        """记录一次传统 LLM 调用。"""
+        self.log("llm", model=model, prompt=prompt[:1500], reply=reply[:500],
+                 latency=latency, in_tokens=in_tokens, out_tokens=out_tokens)
+
     def action(self, method: str, params: dict, before: dict, after: dict,
                extra: dict | None = None, error: str | None = None):
         self.actions += 1

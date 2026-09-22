@@ -14,30 +14,40 @@ import time
 from pathlib import Path
 
 import jev_bot
+import llm_bot
 import naive_bot
 from client import BalatroClient
 
 LOGS = Path(__file__).parent / "logs"
 GAME_EXE = r"D:\software\Steam\steamapps\common\Balatro\Balatro.exe"
 
+CONFIGS = (
+    ("naive", "A/B 基线", naive_bot),
+    ("jev", "solver+Jev", jev_bot),
+    ("llm", "solver+LLM", llm_bot),
+)
+
 
 def restart_game() -> bool:
-    """强杀并重启游戏（冻结自愈），等待 API 上线。"""
+    """强杀并重启游戏（冻结自愈），等待 API 上线后置顶窗口+高优先级（防后台遮挡停摆）。"""
     print("[heal] 游戏冻结，重启游戏…", flush=True)
-    subprocess.run(["taskkill", "/im", "Balatro.exe", "/f"],
-                   capture_output=True)
+    subprocess.run(["taskkill", "/im", "Balatro.exe", "/f"], capture_output=True)
     time.sleep(4)
     os.startfile(GAME_EXE)  # noqa: P101
     bot = BalatroClient()
-    return bot.wait_online(tries=40, delay=2.0)
+    ok = bot.wait_online(tries=40, delay=2.0)
+    if ok:
+        subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                        "-File", str(Path(__file__).parent / "boost_game.ps1")],
+                       capture_output=True)
+    return ok
 
 
 def batch(n_seeds: int = 5) -> list[dict]:
     rows = []
     seeds = [f"JEVATRO{i}" for i in range(1, n_seeds + 1)]
     for seed in seeds:
-        for tag, mod, run in (("naive", "A/B 基线", naive_bot),
-                              ("jev", "solver+Jev", jev_bot)):
+        for tag, _label, run in CONFIGS:
             print(f"\n===== {seed} · {tag} =====", flush=True)
             t0 = time.time()
             try:
@@ -78,7 +88,7 @@ def _write_summary(rows: list[dict]):
             f"{'🏆胜' if r.get('won') else '💀败'} | {r.get('ante','-')} | "
             f"{r.get('round','-')} | {r.get('money','-')} | {r.get('n_jokers','-')} | "
             f"{r.get('wall_s','-')} |")
-    for cfg in ("naive", "jev"):
+    for cfg in ("naive", "jev", "llm"):
         sub = [r for r in rows if r["config"] == cfg and "ante" in r]
         if sub:
             avg = sum(r["ante"] for r in sub) / len(sub)

@@ -46,6 +46,7 @@ def parse_run(path: Path) -> dict | None:
             else:
                 buys_by_set["OTHER"] += 1
     jev_recs = [r for r in recs if r["kind"] == "jev"]
+    llm_recs = [r for r in recs if r["kind"] == "llm"]
     return {
         "seed": start.get("seed"),
         "file": path.name,
@@ -67,6 +68,10 @@ def parse_run(path: Path) -> dict | None:
         **{f"buy_{k}": v for k, v in buys_by_set.items()},
         "jev_calls": len(jev_recs),
         "jev_latency": round(sum(r.get("latency", 0) for r in jev_recs), 1),
+        "llm_calls": len(llm_recs),
+        "llm_latency": round(sum(r.get("latency", 0) for r in llm_recs), 1),
+        "llm_in_tokens": sum(r.get("in_tokens", 0) for r in llm_recs),
+        "llm_out_tokens": sum(r.get("out_tokens", 0) for r in llm_recs),
     }
 
 
