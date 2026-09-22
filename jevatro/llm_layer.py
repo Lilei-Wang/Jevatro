@@ -1,8 +1,8 @@
-"""传统 LLM 决策层（智谱 GLM，OpenAI 兼容接口）——与 JevLayer 同接口镜像。
+"""传统 LLM 决策层（OpenAI 兼容接口；当前后端：DeepSeek deepseek-flash）。
 
 一次商店决策一次 chat 调用（与 Jev 的批量单调用对等）；输出 JSON 容错解析；
 失败回退 naive 策略。token 用量与延迟全程记录（kind="llm"）。
-模型可在 .env 配置（ZHIPU_MODEL），充值后改 glm-5 即可复测旗舰。
+后端在 .env 配置（LLM_BASE/LLM_API_KEY/LLM_MODEL，兼容旧 ZHIPU_* 变量名）。
 """
 from __future__ import annotations
 
@@ -26,10 +26,12 @@ class LlmLayer:
     def __init__(self, log=None, model: str | None = None, base: str | None = None):
         load_env()
         self.log = log
-        self.model = model or os.environ.get("ZHIPU_MODEL", "glm-4-flash")
-        self.base = base or os.environ.get(
-            "ZHIPU_BASE", "https://open.bigmodel.cn/api/paas/v4")
-        self.key = os.environ.get("ZHIPU_API_KEY", "")
+        self.model = (model or os.environ.get("LLM_MODEL")
+                      or os.environ.get("ZHIPU_MODEL", "deepseek-flash"))
+        self.base = (base or os.environ.get("LLM_BASE")
+                     or os.environ.get("ZHIPU_BASE", "https://api.deepseek.com"))
+        self.key = (os.environ.get("LLM_API_KEY")
+                    or os.environ.get("ZHIPU_API_KEY", ""))
         self.calls = 0
         self.total_latency = 0.0
         self.in_tokens = 0
@@ -38,7 +40,7 @@ class LlmLayer:
         self._skip_ante: dict[int, int] = {}   # 每个 ante 的跳盲次数护栏
 
     # ------------------------------------------------------------------
-    def _chat(self, user: str, max_tokens: int = 400) -> str:
+    def _chat(self, user: str, max_tokens: int = 2000) -> str:
         body = {
             "model": self.model,
             "messages": [{"role": "system", "content": SYSTEM},

@@ -333,3 +333,30 @@ JSON 偶发截断。旗舰 LLM 上限（公开：GPT-6 bot 金注通关）需充
 ### 5. 无限模式
 - bot 循环只认 GAME_OVER，胜利后自动继续（无限模式支持就绪）；
   当前三臂白注最深 ante 4-5，尚未通关，无限模式上限数据待决策层强化后产出。
+
+
+---
+
+## 第八轮迭代（2026-09-22 傍晚）—— LLM 臂切换 DeepSeek + Jev 优势专项对比
+
+### 1. DeepSeek 对接
+- 按官方文档（OpenAI 兼容）：base `https://api.deepseek.com`，模型 `deepseek-flash`；
+- 实测特性：thinking 默认开启（内容在 content、思考在 reasoning_content），
+  关闭 thinking 反而输出损坏（`<|TOOL_CALL|>` 混入）；max_tokens 400→2000（思考吃配额）；
+- llm_layer 改为通用后端配置（LLM_BASE/LLM_API_KEY/LLM_MODEL，兼容旧 ZHIPU_*）；
+- 修复：游戏双实例冲突（端口打架）→ 单实例重启。
+
+### 2. Jev vs DeepSeek-flash（8 种子成对，jev/naive 用同版本最新数据）
+| 指标 | naive | jev | deepseek-flash |
+|---|---|---|---|
+| 平均 Ante | 2.62 | **2.88** | 2.75 |
+| 最大单手分 | 1478 | **2475** | 2162 |
+| 总得分 | 11578 | **15348** | 14629 |
+| 最深局数 | 4 | **5** | 4 |
+| 决策延迟/次 | - | **0.55s** | 6.79s（12倍） |
+| 8局 tokens | - | 0.30M in / 0 out | 43K in / **116K out** |
+| 调用失败 | - | **0/149** | ~30%（回退启发式） |
+
+**Jev 五大优势**（已写入报告 §4.5）：快12倍/零失败/输出免费且结构化/批量并行/战绩第一且更稳。
+**DeepSeek 反向证据**（诚实记录）：JEVATRO3（Jev 失误局）反超到 ante4、JEVATRO8 达 ante5
+（全场最深）——思考型残局推理是真实优势，Tier 2 定位依据。
