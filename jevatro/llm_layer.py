@@ -16,6 +16,8 @@ from jev_layer import load_env, _naive_plan
 from serializer import card_name, serialize, solver_facts
 from solver import best_play
 
+import pricing
+
 SYSTEM = (
     "你是小丑牌(Balatro)的商店决策引擎。只输出一个JSON对象,禁止任何其他文字、"
     "解释或markdown代码块标记。"
@@ -36,6 +38,9 @@ class LlmLayer:
         self.total_latency = 0.0
         self.in_tokens = 0
         self.out_tokens = 0
+        self.in_hit_tokens = 0
+        self.in_miss_tokens = 0
+        self.cost_usd = 0.0
         self.failed = 0
         self._skip_ante: dict[int, int] = {}   # 每个 ante 的跳盲次数护栏
 
@@ -61,12 +66,24 @@ class LlmLayer:
         self.calls += 1
         self.total_latency += dt
         u = d.get("usage", {})
-        self.in_tokens += u.get("prompt_tokens", 0)
-        self.out_tokens += u.get("completion_tokens", 0)
+        in_t = u.get("prompt_tokens", 0)
+        out_t = u.get("completion_tokens", 0)
+        # DeepSeek 返回缓存命中/未命中拆分；其他兼容后端缺省按全部未命中计
+        hit = u.get("prompt_cache_hit_tokens", 0) or 0
+        miss = u.get("prompt_cache_miss_tokens", in_t - hit) or 0
+        if hit + miss == 0:
+            miss = in_t
+        cost = pricing.llm_cost_usd(miss, hit, out_t, model=self.model)
+        self.in_tokens += in_t
+        self.out_tokens += out_t
+        self.in_hit_tokens += hit
+        self.in_miss_tokens += miss
+        self.cost_usd += cost
         if self.log:
             self.log.llm(model=self.model, prompt=user, reply=d["choices"][0]["message"]["content"],
-                         latency=round(dt, 2), in_tokens=u.get("prompt_tokens", 0),
-                         out_tokens=u.get("completion_tokens", 0))
+                         latency=round(dt, 2), in_tokens=in_t,
+                         out_tokens=out_t, in_hit_tokens=hit, in_miss_tokens=miss,
+                         cost_usd=cost)
         return d["choices"][0]["message"]["content"]
 
     @staticmethod

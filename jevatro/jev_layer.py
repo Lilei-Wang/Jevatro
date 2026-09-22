@@ -12,6 +12,8 @@ from serializer import card_name, serialize, solver_facts
 from solver import best_play
 from use_policy import NO_BUY
 
+import pricing
+
 # ---------------------------------------------------------------------------
 # 环境
 # ---------------------------------------------------------------------------
@@ -82,6 +84,9 @@ class JevLayer:
         self.calls = 0
         self.total_latency = 0.0
         self.failed = 0
+        self.in_tokens = 0
+        self.out_tokens = 0
+        self.cost_usd = 0.0
         self._client = None
 
     @property
@@ -92,18 +97,26 @@ class JevLayer:
 
     # ------------------------------------------------------------------
     def ask(self, state_text: str, questions: dict):
-        """执行一次批量调用并记录。失败抛异常，由调用方回退。"""
+        """执行一次批量调用并记录（token/成本取 API 返回的实测 usage）。"""
         from typesafe_sdk import Choice, Noul, Score
         t0 = time.time()
         resp = self.client.system_one(state=state_text, questions=questions)
         dt = time.time() - t0
         self.calls += 1
         self.total_latency += dt
+        u = getattr(resp, "usage", None)
+        in_t = getattr(u, "input_tokens", None) or 0
+        out_t = getattr(u, "output_tokens", None) or 0
+        cost = pricing.jev_cost_usd(in_t, out_t)
+        self.in_tokens += in_t
+        self.out_tokens += out_t
+        self.cost_usd += cost
         if self.log:
             self.log.jev(state=state_text,
                          questions={k: getattr(q, "instructions", str(q)) for k, q in questions.items()},
                          answers={k: _ans_brief(a) for k, a in resp.answers.items()},
-                         latency=round(dt, 2))
+                         latency=round(dt, 2), model=getattr(resp, "model", "jev"),
+                         in_tokens=in_t, out_tokens=out_t, cost_usd=cost)
         return resp
 
     # ------------------------------------------------------------------

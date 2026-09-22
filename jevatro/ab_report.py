@@ -11,6 +11,8 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
+import pricing
+
 LOGS = Path(__file__).parent / "logs"
 
 
@@ -47,6 +49,26 @@ def parse_run(path: Path) -> dict | None:
                 buys_by_set["OTHER"] += 1
     jev_recs = [r for r in recs if r["kind"] == "jev"]
     llm_recs = [r for r in recs if r["kind"] == "llm"]
+    jev_in = sum(r.get("in_tokens", 0) for r in jev_recs)
+    jev_est = 0
+    for r in jev_recs:
+        if not r.get("in_tokens"):
+            jev_est += pricing.est_tokens(
+                r.get("state", "") + json.dumps(r.get("questions", {}), ensure_ascii=False))
+    jev_cost = (sum(r.get("cost_usd", 0) for r in jev_recs)
+                + pricing.jev_cost_usd(jev_est, 0))
+    llm_cost = 0.0
+    llm_hit = llm_miss = 0
+    for r in llm_recs:
+        if r.get("cost_usd") is not None:
+            llm_cost += r.get("cost_usd", 0)
+            llm_hit += r.get("in_hit_tokens", 0)
+            llm_miss += r.get("in_miss_tokens", 0)
+        else:
+            in_t, out_t = r.get("in_tokens", 0), r.get("out_tokens", 0)
+            if "glm" not in (r.get("model") or ""):
+                llm_cost += pricing.llm_cost_usd(in_t, 0, out_t)
+            llm_miss += in_t
     return {
         "seed": start.get("seed"),
         "file": path.name,
@@ -68,10 +90,18 @@ def parse_run(path: Path) -> dict | None:
         **{f"buy_{k}": v for k, v in buys_by_set.items()},
         "jev_calls": len(jev_recs),
         "jev_latency": round(sum(r.get("latency", 0) for r in jev_recs), 1),
+        "jev_in_tokens": jev_in,
+        "jev_in_est": jev_est,
+        "jev_out_tokens": sum(r.get("out_tokens", 0) for r in jev_recs),
+        "jev_cost_usd": round(jev_cost, 6),
         "llm_calls": len(llm_recs),
         "llm_latency": round(sum(r.get("latency", 0) for r in llm_recs), 1),
         "llm_in_tokens": sum(r.get("in_tokens", 0) for r in llm_recs),
         "llm_out_tokens": sum(r.get("out_tokens", 0) for r in llm_recs),
+        "llm_in_hit": llm_hit,
+        "llm_in_miss": llm_miss,
+        "llm_cost_usd": round(llm_cost, 6),
+        "llm_model": llm_recs[0].get("model", "") if llm_recs else "",
     }
 
 
@@ -139,16 +169,38 @@ def report() -> str:
         ms = [groups[(s, c)] for s in seeds]
         calls = sum(m[call_key] for m in ms)
         lat = sum(m[lat_key] for m in ms)
-        extra = ""
-        if c == "llm":
+        if c == "jev":
+            tin = sum(m.get("jev_in_tokens", 0) for m in ms)
+            test = sum(m.get("jev_in_est", 0) for m in ms)
+            tout = sum(m.get("jev_out_tokens", 0) for m in ms)
+            cost = sum(m.get("jev_cost_usd", 0) for m in ms)
+            tok = f"，输入 {tin:,} tokens" + (f" + 估算 {test:,}" if test else "")
+            tok += f"，输出 {tout:,}（免费）"
+            lines += ["", f"## {kind} 层开销", "",
+                      f"- 总调用 {calls} 次，决策总延迟 {lat:.1f}s（平均 {lat / max(calls, 1):.2f}s/次）{tok}",
+                      f"- 总成本 ${cost:.4f} ≈ ¥{cost * pricing.USD_TO_CNY:.3f}"
+                      f"（单局 ${cost / max(len(ms), 1):.5f}，价格 $0.042/M 输入、输出免费）"]
+        else:
             tin = sum(m.get("llm_in_tokens", 0) for m in ms)
             tout = sum(m.get("llm_out_tokens", 0) for m in ms)
-            extra = f"，{tin} in / {tout} out tokens（glm-4-flash 免费档）"
-        lines += ["", f"## {kind} 层开销", "",
-                  f"- 总调用 {calls} 次，决策总延迟 {lat:.1f}s（平均 {lat / max(calls, 1):.2f}s/次）{extra}"]
-        if c == "jev":
-            lines.append(f"- 输入按 ~2K tokens/次估算：{calls * 2000 / 1e6:.2f}M tokens ≈ "
-                         f"${calls * 2000 / 1e6 * 0.042:.4f}（输出免费）")
+            hit = sum(m.get("llm_in_hit", 0) for m in ms)
+            miss = sum(m.get("llm_in_miss", 0) for m in ms)
+            cost = sum(m.get("llm_cost_usd", 0) for m in ms)
+            cache = f"（缓存命中 {hit:,} / 未命中 {miss:,}）" if hit or miss else ""
+            model = next((m2.get("llm_model") for m2 in ms if m2.get("llm_model")), "")
+            lines += ["", f"## {kind} 层开销（{model or 'deepseek-flash'}）", "",
+                      f"- 总调用 {calls} 次，决策总延迟 {lat:.1f}s（平均 {lat / max(calls, 1):.2f}s/次）",
+                      f"- 输入 {tin:,} tokens{cache}，输出 {tout:,} tokens",
+                      f"- 总成本 ${cost:.4f} ≈ ¥{cost * pricing.USD_TO_CNY:.3f}"
+                      f"（单局 ${cost / max(len(ms), 1):.5f}，高峰价；非高峰半价）"]
+
+    # 成本对比行（两边都有数据时）
+    if "jev" in cfgs and "llm" in cfgs:
+        cj = sum(groups[(s, "jev")].get("jev_cost_usd", 0) for s in seeds) / len(seeds)
+        cl = sum(groups[(s, "llm")].get("llm_cost_usd", 0) for s in seeds) / len(seeds)
+        if cj > 0 and cl > 0:
+            lines += ["", f"- **单局成本对比：LLM 是 Jev 的 {cl / cj:.1f} 倍**"
+                      f"（Jev ¥{cj * pricing.USD_TO_CNY:.4f}/局 vs LLM ¥{cl * pricing.USD_TO_CNY:.3f}/局）"]
 
     lines += ["", "## 胜负计数（并列计胜）", ""] + [
         f"- {c}: {wins[c]} 局最深" for c in cfgs]

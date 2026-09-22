@@ -151,7 +151,7 @@
     <li><b>方差</b>：DeepSeek 上下限更宽（ante1 ↔ ante5），Jev 更稳（ante2–4 集中）——思考型输出不确定性更高。</li>
     <li><b>结构化</b>：DeepSeek 依赖 JSON 容错解析（思考内容偶发混入）；Jev 原生返回结构化答案+概率分布。</li>
   </ul>
-  <p class="src">数据：本项目 logs/ab_report.md（24 局逐决策 JSONL），种子 JEVATRO1–8，红牌组白注，4x 游戏速度（三臂等速）。DeepSeek 全部经 api.deepseek.com 真实调用（deepseek-flash，thinking 默认开）。</p>
+  <p class="src">数据：本项目 logs/ab_report.md（24 局逐决策 JSONL），种子 JEVATRO1–8，红牌组白注，4x 游戏速度（三臂等速）。DeepSeek 全部经 api.deepseek.com 真实调用（deepseek-flash，thinking 默认开）。<br>更新（2026-09-22 晚）：为验证 token/成本记账新增第 9 个种子 COST9 后，三臂 Ante 均值变为 naive 2.78 / Jev 2.67 / LLM 2.89——单局方差（±1 Ante）远大于 9 样本下的臂间差异，Ante 均值在三臂间应视为统计噪声；Jev 的稳定优势体现在<b>单手分上限、总得分、延迟、成本与零失败</b>（见 §4/§4.5）。</p>
 </section>
 
 <!-- 4 经济性 -->
@@ -162,12 +162,13 @@
     <tr><td>单次决策延迟</td><td><b>0.55 s</b>（批量 20+ 题）</td><td>6.79 s（思考型，单题单答）</td><td>5–30 s</td></tr>
     <tr><td>决策调用数/局</td><td>~19</td><td>~12.5</td><td>同量级</td></tr>
     <tr><td>单局决策总时延</td><td>~10 s</td><td>~85 s</td><td>1–5 分钟</td></tr>
-    <tr><td>8 局 token 消耗</td><td>~0.30M in / <b>0 out</b></td><td>43K in / <b>116K out</b>（思考消耗）</td><td>更高</td></tr>
-    <tr><td>单局成本</td><td><b>$0.0007</b>（输出免费）</td><td>约 ¥0.01–0.03（按 flash 档定价）</td><td>$1–10 / ¥5–50</td></tr>
+    <tr><td>单局 token 消耗 <span class="tag meas">实测·COST9</span></td><td>45,415 in / 5,029 out</td><td>11,129 in / <b>35,367 out</b>（思考消耗）</td><td>更高</td></tr>
+    <tr><td>官方定价 <span class="tag ref">公开</span></td><td>$0.042/M 输入，<b>输出免费</b></td><td>$0.30/M 输入(未命中) · $0.006/M(命中) · $1.20/M 输出（高峰价，非高峰半价）</td><td>更高</td></tr>
+    <tr><td>单局成本</td><td><b>$0.0012</b> ≈ ¥0.009（输出免费）</td><td>$0.046 ≈ ¥0.33（COST9 实测；9 局回溯均值 $0.022）</td><td>$1–10 / ¥5–50</td></tr>
     <tr><td>批量并行</td><td>一次调用混装任意多题，<b>延迟几乎不变</b></td><td>一题一答，多问需多次调用</td><td>同左</td></tr>
-    <tr><td>输出可靠性</td><td>结构化原生返回，0 解析失败</td><td>JSON 容错解析，~30% 调用回退</td><td>同左</td></tr>
+    <tr><td>输出可靠性</td><td>结构化原生返回，0 解析失败</td><td>JSON 容错解析，~30% 调用回退（COST9 局 24 调用 9 次回退）</td><td>同左</td></tr>
   </table>
-  <div class="note">DeepSeek-flash 比 Jev 便宜到可以忽略，但<b>延迟 12 倍 + 思考 token + 回退率</b>让它在高频决策位上性价比落后；而它在个别残局的反超（JEVATRO3/8）说明推理深度确有价值——放 Tier 2 低频兜底位正合适。</div>
+  <div class="note">按 2026-09-22 官方价核账：<b>单局成本 Jev 约为 DeepSeek-flash 的 1/18</b>（¥0.009 vs ¥0.16，9 局口径），叠加<b>延迟 12 倍 + 35K 思考输出 token + ~30% 回退率</b>，高频决策位上 Jev 性价比全面领先；而 DeepSeek 在个别残局的反超（JEVATRO3/8）说明推理深度确有价值——放 Tier 2 低频兜底位正合适。逐次调用 token 与成本的完整台账见 <b>jevatro/logs/cost_report.md</b>（每次调用的 in/out tokens、缓存命中拆分、cost_usd 均落盘于 run_*.jsonl）。</div>
 </section>
 
 <!-- 4.5 Jev 优势 -->
@@ -179,7 +180,7 @@
     <tr><td><b>② 零失败</b></td><td>149 次调用 0 失败 vs ~30% 回退</td><td>回退=决策质量塌回启发式；Jev 无此损耗</td></tr>
     <tr><td><b>③ 输出免费且结构化</b></td><td>0 输出 token vs 11.6 万思考 token</td><td>无解析损耗、无幻觉文本；成本只算输入</td></tr>
     <tr><td><b>④ 批量并行</b></td><td>一次调用 20+ 题延迟不变</td><td>多维打分（4 维×N 商品+方向+重掷）天然一次完成；LLM 需拆多次调用</td></tr>
-    <tr><td><b>⑤ 战绩仍第一</b></td><td>Ante 2.88 vs 2.75；单手 2475 vs 2162</td><td>更稳（ante 2–4 集中）vs 更飘（ante 1–5 波动）</td></tr>
+    <tr><td><b>⑤ 得分上限更高</b></td><td>单手 2475 vs 2162；总得分 15348 vs 14629（24 局）；9 局后仍领先（2330 vs 2195）</td><td>Ante 均值三臂在噪声内（±1 Ante 方差），但 Jev 的爆发力与总得分稳定占优</td></tr>
   </table>
   <p><b>DeepSeek 的反向证据（诚实记录）</b>：JEVATRO3（Jev 失误局）DeepSeek 打到 Ante 4、JEVATRO8 打到 Ante 5（全场最深）——思考型 LLM 在复杂残局的推理深度是真实优势，这正是三层漏斗中 Tier 2 的定位依据。</p>
 </section>
@@ -254,9 +255,10 @@
 <section>
   <h2><span class="no">8</span>数据来源</h2>
   <ul class="src">
-    <li>实测：本项目 24 局对局 JSONL 日志（jevatro/logs/）、ab_report.md 三配置汇总（2026-09-22 13:07 批次，4x 游戏速度等速对照）</li>
+    <li>实测：本项目 27 局对局 JSONL 日志（jevatro/logs/）、ab_report.md 三配置汇总（2026-09-22 批次，4x 游戏速度等速对照；COST9 局为全实测 token/成本口径）</li>
     <li>Jev 规格：<a href="https://typesafe.ai" target="_blank">TypeSafe AI 官方博客</a> · <a href="https://docs.typesafe.ai/introduction/quickstart.md" target="_blank">官方文档</a>（定价 $0.042/MTok 输入、输出免费、70–500ms）</li>
-    <li>LLM 实测：DeepSeek open API（api.deepseek.com，deepseek-flash，thinking 默认开、max_tokens 2000；8 局 100 次调用 43K in/116K out）。另曾实测智谱 glm-4-flash 免费档（平均 Ante 1.88，已由 DeepSeek 臂替代）</li>
+    <li>DeepSeek 定价：<a href="https://api-docs.deepseek.com/quick_start/pricing" target="_blank">官方定价页</a>（deepseek-flash = V4.1-Flash，输入未命中 $0.30/M · 命中 $0.006/M · 输出 $1.20/M，高峰价；非高峰一律半价；2026-09-22 查证）</li>
+    <li>LLM 实测：DeepSeek open API（api.deepseek.com，deepseek-flash，thinking 默认开、max_tokens 2000；累计 124 次调用 54.6K in/151K out，逐次 token/成本台账见 cost_report.md）。另曾实测智谱 glm-4-flash 免费档（平均 Ante 1.88，已由 DeepSeek 臂替代）</li>
     <li>LLM 战绩（公开）：<a href="https://www.tomshardware.com/tech-industry/artificial-intelligence/ai-enthusiast-builds-gpt-6-astra-powered-bot-to-take-on-balatros-gold-stake-black-deck-bot-leverages-python-for-numerical-tools-beats-hardest-difficulty-repeatedly" target="_blank">Tom's Hardware：GPT-6 Astra bot 通关金注黑牌组</a>（2026-09，多次通关、无公开胜率/成本）</li>
     <li>LLM 旗舰级延迟/成本估算口径：方案文档 §9（2–5K tokens/步 × 旗舰定价），未实测</li>
     <li>基准框架：<a href="https://github.com/alesha-pro/evalatro" target="_blank">Evalatro</a>（无限模式目标 Ante 12）</li>

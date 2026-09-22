@@ -392,3 +392,35 @@ JSON 偶发截断。旗舰 LLM 上限（公开：GPT-6 bot 金注通关）需充
 - **JEVATRO6 打到 Ante 6——全项目新纪录**（该种子历史最好仅 2），离通关（Ante 8）只差两轮；
 - 无首胜。Jev 决策非确定性（同策略同种子两次可差 ±1 ante），8 局样本不足以区分 8.1 与 7，
   需 20+ 种子大样本才有结论。
+
+
+---
+
+## 第十轮迭代（2026-09-22 深夜）—— Token/成本全链路记账（Jev vs DeepSeek）
+
+**需求**：记录每次 Jev 与 DeepSeek 调用的 token 消耗与成本对比，价格取官方线上价。
+
+**官方价格查证（2026-09-22）**：
+- Jev (TypeSafe System One)：输入 $0.042/百万 tokens，输出免费；
+- deepseek-flash (V4.1-Flash)：输入未命中 $0.30 / 命中 $0.006、输出 $1.20
+  （USD/百万，高峰价；非高峰一律半价）。
+
+**实现**：
+- 新增 pricing.py 中央价格表（含来源 URL+查价日期）与成本函数；
+- Jev 层：SDK 响应自带 usage（实测 in/out tokens）+ model，逐次落盘 cost_usd；
+- LLM 层：补记 DeepSeek 缓存命中/未命中拆分（prompt_cache_hit/miss_tokens），
+  逐次落盘 cost_usd（默认高峰价=保守上界）；
+- 新增 cost_report.py：扫描全部历史日志，产出 logs/cost_report.md
+  （价格表 / 总消耗对比 / 逐局明细 / 单次调用口径四节）；
+- ab_report.md 开销章节改为实测 token+成本（Jev 旧日志按文本长度估算，
+  估算系数由 COST9 局 27 次实测校准：中文状态文本 ≈ 0.93 字符/token）；
+- LLM对比Jev报告.html §4/§4.5/§8 同步官方价+实测数据，
+  修正旧结论"DeepSeek 便宜到可忽略"→ 实测单局成本 Jev 约为 LLM 的 1/18。
+
+**COST9 三配置验证局（全实测口径）**：
+- naive Ante 4（172s，0 模型调用）；jev Ante 3（154s，27 调用 0 失败，
+  实测 45,415 in / 5,029 out，$0.0019/局）；llm Ante 4（356s，24 调用 9 回退，
+  11,129 in / 35,367 out 思考，$0.046/局）；
+- 历史累计（截至本轮）：Jev 1082 调用 $0.074；LLM 201 调用 $0.204；
+- 诚实记录：9 种子后三臂 Ante 均值在噪声内（naive 2.78/jev 2.67/llm 2.89），
+  Jev 的稳定优势在单手分上限/总得分/延迟/成本/零失败。
