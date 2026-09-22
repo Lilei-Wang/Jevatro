@@ -58,6 +58,17 @@ def serialize(gs: dict, extra_facts: str = "") -> str:
     lines.append(f"[局] 第{gs.get('ante_num')}轮/{8}周目, 第{gs.get('round_num')}局, "
                  f"金币${gs.get('money')}, 手数{r.get('hands_left')}, 弃牌{r.get('discards_left')}, "
                  f"已得chips {r.get('chips', 0)}")
+    # 死因分析结论：深局常囤钱至死——利息上限$25，超出部分不生息
+    if (gs.get("money") or 0) >= 26:
+        lines.append(f"[经济警示] 金币已超利息上限$25，多出的${gs.get('money') - 25}"
+                     f"不产生利息，应尽快转化为战力")
+    # 无 X 倍率警示：后程需求指数增长，纯加算小丑会乏力
+    from scoring import JOKER_EFFECTS
+    has_x = any(JOKER_EFFECTS.get(j.get("key", ""), ("",))[0].startswith(("xmult", "contains_xmult", "xmult_per", "per_card_rank_xmult"))
+                for j in (gs.get("jokers") or {}).get("cards", []))
+    if jokers and not has_x:
+        lines.append("[战力警示] 当前没有任何X倍率小丑, 后续盲注需求指数增长, "
+                     "加算类小丑会越来越吃力, X倍率商品优先级应提高")
     lines.append(f"[盲注] {_blind_line(gs)}")
 
     hands = gs.get("hands", {})

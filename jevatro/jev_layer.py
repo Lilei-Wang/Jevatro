@@ -205,9 +205,10 @@ class JevLayer:
         plan = []
         card_buy_planned = False
         voucher_buy_planned = False
-        # 早期小丑稀缺（<3张）：几乎任何能买的小丑都值得要（naive基线实证）
+        # 死因分析结论：深局囤钱至死（死时均值$46）——超利息上限后放宽购买
         n_jokers = len(jokers_area.get("cards", []))
-        joker_tau = 0.32 if n_jokers < 3 else BUY_VALUE_TAU
+        rich = gs.get("money", 0) >= 26
+        joker_tau = 0.30 if (n_jokers < 3 or rich) else BUY_VALUE_TAU
         for it in sorted(scored, key=lambda x: -x["value"]):
             price = it["card"].get("cost", {}).get("buy", 0)
             if price > money:
@@ -224,8 +225,8 @@ class JevLayer:
             elif card_buy_planned:
                 continue
             if it["kind"] == "JOKER" and slots_full:
-                # 槽满：只有价值明显更高才值得卖旧换新
-                if it["value"] < 0.58 or "sell_which" not in a:
+                # 槽满：死因分析显示深局常5张满员且囤钱——放宽换将门槛
+                if it["value"] < 0.50 or "sell_which" not in a:
                     continue
                 sell_key = a["sell_which"].choice
                 if not sell_key or not sell_key.startswith("j"):
@@ -249,9 +250,11 @@ class JevLayer:
                                 f"conf={it['conf']:.2f} arch={arch}"})
             money -= price
 
-        # 重掷（仅当没买到东西且 Jev 认为值得）
+        # 重掷：没买到东西时——钱宽裕（>重掷费+10）放宽到 noul>0.5，
+        # 钱紧维持 noul>0.6（死因分析：深局常有钱没处花）
         if not plan and money >= reroll_cost + 3:
-            if getattr(a.get("reroll_worth"), "noul", 0) > 0.6:
+            thr = 0.5 if money >= reroll_cost + 10 else 0.6
+            if getattr(a.get("reroll_worth"), "noul", 0) > thr:
                 plan.append({"method": "reroll", "params": {},
                              "why": f"jev reroll noul={a['reroll_worth'].noul:.2f}"})
         return plan
