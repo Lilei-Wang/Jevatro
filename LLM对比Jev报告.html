@@ -76,19 +76,19 @@
 <!-- 0 摘要 -->
 <section>
   <h2><span class="no">0</span>执行摘要</h2>
-  <p><b>结论先行：Jev 和传统 LLM 不是竞争关系，而是决策栈的两层。</b>在小丑牌这类"精确计算 + 直觉判断"混合的任务上：</p>
+  <p><b>结论先行：Jev 和传统 LLM 不是竞争关系，而是决策栈的两层。</b>本报告含 <b>24 局三配置同种子成对实测</b>（solver-only / solver+Jev / solver+LLM）：</p>
   <ul>
-    <li><b>传统 LLM（GPT-6 级）</b>：能力强上限高——公开报道中 GPT-6 Astra bot 曾多次通关最高难度金注黑牌组；但每步 5–30 秒、单局成本美元级，适合"低频深度决策"。</li>
-    <li><b>Jev</b>：只做判断不做生成——本项目实测平均 <b>0.62 秒/次</b>（批量 20+ 题）、<b>约 $0.0007/局</b>；在 8 种子 A/B 中使平均到达 Ante 从 2.50 提升到 2.75、最大单手分 +64%，适合"高频模糊判断"。</li>
-    <li><b>最优解是三层漏斗</b>：求解器（精确）→ Jev（快判断）→ LLM（低置信兜底）。本项目已跑通前两层。</li>
+    <li><b>Jev</b>：实测平均 <b>0.55 秒/次</b>（批量 20+ 题）、<b>约 $0.0007/局</b>；24 局中平均 Ante <b>2.88</b>（三臂最高），最大单手分均值 <b>2475</b>（+68% vs 基线）。</li>
+    <li><b>传统 LLM（实测：智谱 glm-4-flash 免费档）</b>：平均 1.78s/次，平均 Ante <b>1.88</b>（三臂最低）——小模型在这个任务上弱于 Jev；<span class="tag est">估算</span> 旗舰级 LLM（glm-5 / GPT-6 级）上限更高但单局成本美元级（见 §4、§5）。</li>
+    <li><b>最优解是三层漏斗</b>：求解器（精确）→ Jev（快判断）→ LLM（低置信兜底）。本项目已跑通前两层并完成 LLM 臂实测。</li>
   </ul>
   <div class="hero">
-    <div class="stat"><div class="v">0.62s</div><div class="l">Jev 单次决策延迟（实测均值）</div></div>
-    <div class="stat"><div class="v">$0.0007</div><div class="l">Jev 单局成本（实测）</div></div>
-    <div class="stat"><div class="v">+64%</div><div class="l">有 Jev 最大单手分提升（8种子）</div></div>
-    <div class="stat"><div class="v">20+</div><div class="l">单次调用并行问题数（延迟几乎不变）</div></div>
+    <div class="stat"><div class="v">0.55s</div><div class="l">Jev 单次决策延迟（24局实测）</div></div>
+    <div class="stat"><div class="v">1.78s</div><div class="l">LLM 单次决策延迟（glm-4-flash）</div></div>
+    <div class="stat"><div class="v">2.88</div><div class="l">Jev 平均 Ante（naive 2.62 / LLM 1.88）</div></div>
+    <div class="stat"><div class="v">2475</div><div class="l">Jev 单手分均值（三臂最高）</div></div>
   </div>
-  <div class="note"><b>数据口径声明（诚实原则）</b>：标注 <span class="tag meas">实测</span> 的数字来自本项目 8 种子 × 2 配置共 16 局对局日志；标注 <span class="tag est">估算</span> 的为按公开定价推算；标注 <span class="tag ref">公开</span> 的来自媒体报道（GPT-6 Astra bot / Evalatro / 官方文档）。LLM 路线未在本项目实测（无对应 API key），其战绩引用公开报道。</div>
+  <div class="note"><b>数据口径声明（诚实原则）</b>：标注 <span class="tag meas">实测</span> 的数字来自本项目 8 种子 × 3 配置共 24 局对局日志（LLM 臂为智谱 glm-4-flash——该账号免费档唯一可用模型，旗舰 glm-5 因余额不足返回 1113，充值后改一行配置即可复测）；标注 <span class="tag est">估算</span> 的为按公开定价推算；标注 <span class="tag ref">公开</span> 的来自媒体报道（GPT-6 Astra bot 通关金注黑牌组）。</div>
 </section>
 
 <!-- 1 架构 -->
@@ -123,40 +123,50 @@
 
 <!-- 3 实测数据 -->
 <section>
-  <h2><span class="no">3</span>实测 A/B：有无 Jev 的差异 <span class="tag meas">实测 · 8 种子 × 2 配置</span></h2>
+  <h2><span class="no">3</span>实测三配置对比 <span class="tag meas">实测 · 8 种子 × 3 配置 × 24 局</span></h2>
+  <p>三臂共享同一求解器/规则引擎/消耗牌策略，唯一差异是"商店/盲注/开包"的决策大脑：启发式（naive）/ Jev / 传统 LLM（glm-4-flash）。</p>
   <table>
-    <tr><th>指标（均值/局）</th><th>solver-only</th><th>solver + Jev</th><th>变化</th></tr>
-    <tr><td>到达 Ante</td><td>2.50</td><td><b>2.75</b></td><td class="win">+0.25</td></tr>
-    <tr><td>最大单手分</td><td>1465</td><td><b>2403</b></td><td class="win">+64%</td></tr>
-    <tr><td>全场总得分</td><td>11908</td><td><b>17097</b></td><td class="win">+44%</td></tr>
-    <tr><td>购买数</td><td>3.75</td><td>5.75</td><td>+2.00</td></tr>
-    <tr><td>消耗牌使用</td><td>0</td><td>1.62</td><td>新能力</td></tr>
-    <tr><td>跳盲次数</td><td>0</td><td>0.38</td><td>新能力</td></tr>
-    <tr><td>胜负（同种子对比）</td><td colspan="3">Jev 胜 2 · 平 5 · solver-only 胜 1</td></tr>
+    <tr><th>指标（均值/局）</th><th>solver-only</th><th>solver + Jev</th><th>solver + LLM</th></tr>
+    <tr><td>到达 Ante</td><td>2.62</td><td><b>2.88</b></td><td>1.88</td></tr>
+    <tr><td>最大单手分</td><td>1478</td><td><b>2475</b></td><td>979</td></tr>
+    <tr><td>全场总得分</td><td>11578</td><td><b>15348</b></td><td>3738</td></tr>
+    <tr><td>购买数</td><td>4.12</td><td><b>7.00</b></td><td>3.12</td></tr>
+    <tr><td>消耗牌使用</td><td>0</td><td>2.00</td><td>1.00</td></tr>
+    <tr><td>跳盲次数</td><td>0</td><td>0.38</td><td>1.88</td></tr>
+    <tr><td>非法动作</td><td>0</td><td>0</td><td>0</td></tr>
+    <tr><td>最深局数（并列计胜）</td><td>6</td><td><b>6</b></td><td>3</td></tr>
   </table>
   <h3>代表性种子</h3>
   <table>
-    <tr><th>种子</th><th>solver-only</th><th>solver + Jev</th><th>单手最高分对比</th></tr>
-    <tr><td>JEVATRO8</td><td>Ante 2</td><td class="win">Ante 4</td><td>492 → 4559（9 倍）</td></tr>
-    <tr><td>JEVATRO4</td><td>Ante 4</td><td class="win">Ante 5</td><td>4560 → 6981</td></tr>
-    <tr><td>JEVATRO3</td><td class="win">Ante 3</td><td>Ante 2</td><td>2132 → 651（反向样本）</td></tr>
+    <tr><th>种子</th><th>solver-only</th><th>solver + Jev</th><th>solver + LLM</th><th>看点</th></tr>
+    <tr><td>JEVATRO1</td><td>Ante 2</td><td class="win">Ante 4（单手 2553）</td><td>Ante 2</td><td>Jev 买满 10 件滚起雪球</td></tr>
+    <tr><td>JEVATRO5</td><td>Ante 2</td><td class="win">Ante 4（单手 4400）</td><td>Ante 1</td><td>Jev 逆境翻盘样本</td></tr>
+    <tr><td>JEVATRO3</td><td class="win">Ante 3</td><td>Ante 2</td><td>Ante 1</td><td>反向样本：Jev/LLM 都误判此局</td></tr>
+    <tr><td>JEVATRO7</td><td>Ante 4</td><td>Ante 4（单手 7756）</td><td class="win">Ante 4</td><td>三臂齐平，Jev 爆发最强</td></tr>
   </table>
-  <p class="src">数据来源：本项目 logs/ab_report.md（16 局逐决策 JSONL 日志），种子 JEVATRO1–8，红牌组白注。Jev 全部经由 <code>api.typesafe.ai</code> 真实调用。</p>
+  <h3>决策层行为差异（Jev vs LLM）</h3>
+  <ul>
+    <li><b>跳盲风格</b>：LLM 明显激进（1.88 次/局 vs Jev 0.38）——glm-4-flash 曾连跳两盲直冲 Boss 必败，加了"每 ante 最多跳 1"护栏后才稳住；Jev 的 Noul 概率天然保守。</li>
+    <li><b>购买意愿</b>：Jev 7.0 件/局 vs LLM 3.1 件——小 LLM 对"买不买"偏保守（输出 none 频率高），Jev 的多维打分总能给出可排序的值。</li>
+    <li><b>结构化可靠性</b>：LLM 依赖 JSON 解析容错（偶发截断需正则抽取）；Jev 原生返回结构化答案+概率分布，零解析失败。</li>
+  </ul>
+  <p class="src">数据：本项目 logs/ab_report.md（24 局逐决策 JSONL），种子 JEVATRO1–8，红牌组白注，4x 游戏速度（对三臂等速）。LLM 全部经智谱 open.bigmodel.cn 真实调用。</p>
 </section>
 
 <!-- 4 经济性 -->
 <section>
   <h2><span class="no">4</span>经济性与延迟</h2>
   <table>
-    <tr><th style="width:170px">指标</th><th>Jev <span class="tag meas">实测</span></th><th>传统 LLM <span class="tag est">估算</span></th></tr>
-    <tr><td>单步决策延迟</td><td><b>0.62 s</b>（批量 20+ 题，含网络）</td><td>5–30 s/步（推理型更长）</td></tr>
-    <tr><td>单局 API 总时延</td><td>~7 s（12 次调用）</td><td>20–60 分钟</td></tr>
-    <tr><td>单局成本</td><td><b>$0.0007</b>（输入 $0.042/MTok，输出免费）</td><td>$1–10（按 GPT-6 类定价与 2–5K tokens/步估算）</td></tr>
-    <tr><td>本项目 16 局总开销</td><td><b>$0.011</b>（132 次调用）</td><td>（未实测）</td></tr>
-    <tr><td>限流</td><td>250K tok/s（本场景无感）</td><td>依供应商配额</td></tr>
-    <tr><td>批量并行</td><td>一次调用混装任意多题，<b>延迟几乎不变</b></td><td>多题需多次调用或长上下文串行</td></tr>
+    <tr><th style="width:170px">指标</th><th>Jev <span class="tag meas">实测</span></th><th>LLM glm-4-flash <span class="tag meas">实测</span></th><th>LLM 旗舰级 <span class="tag est">估算</span></th></tr>
+    <tr><td>单次决策延迟</td><td><b>0.55 s</b>（批量 20+ 题）</td><td>1.78 s（单题单答）</td><td>5–30 s（推理型更长）</td></tr>
+    <tr><td>决策调用数/局</td><td>~19（商店+盲注+开包）</td><td>~6.5</td><td>同左量级</td></tr>
+    <tr><td>单局决策总时延</td><td>~10 s</td><td>~12 s</td><td>1–5 分钟</td></tr>
+    <tr><td>单局成本</td><td><b>$0.0007</b>（输出免费）</td><td><b>¥0</b>（免费档）</td><td>$1–10 / ¥5–50</td></tr>
+    <tr><td>24 局总开销</td><td><b>$0.0125</b></td><td>¥0（21K tokens）</td><td>（未测）</td></tr>
+    <tr><td>批量并行</td><td>一次调用混装任意多题，<b>延迟几乎不变</b></td><td>一题一答，多问需多次调用</td><td>同左</td></tr>
+    <tr><td>输出可靠性</td><td>结构化原生返回，0 解析失败</td><td>JSON 容错解析（偶发截断）</td><td>同左</td></tr>
   </table>
-  <div class="note">成本差 <b>3–4 个数量级</b>。这意味着：Jev 可以在每一个商店、每一次盲注选择时都被调用而不心疼；LLM 只值得用在"这一步走错就输"的关键决策上。</div>
+  <div class="note">Jev 与免费档 LLM 成本都趋近于零，此时<b>决胜因素是决策质量与延迟</b>——Jev 以 1/3 的延迟拿到更高战绩（2.88 vs 1.88 Ante）。旗舰 LLM 的质量上限（公开：GPT-6 bot 通金注）值得付费，但只该花在低频关键决策上——这正是三层漏斗的分工。</div>
 </section>
 
 <!-- 5 能力边界 -->
@@ -175,10 +185,11 @@
     <div class="col llm">
       <h4>🤖 传统 LLM 的不可替代性</h4>
       <ul>
-        <li><b>长链推理</b>：跨 3 个 Ante 的经济规划、极端局面的创造性救场</li>
+        <li><b>长链推理</b>：跨 3 个 Ante 的经济规划、极端局面的创造性救场（旗舰级；实测 glm-4-flash 尚未展现）</li>
         <li><b>指令泛化</b>：没见过的 Boss 组合/卡牌交互也能给合理建议</li>
         <li><b>生成能力</b>：输出解释、写复盘报告、生成 prompt 本身</li>
-        <li><b>战绩上限</b>：<span class="tag ref">公开</span> GPT-6 Astra bot 多次通关金注黑牌组（本项目 Jev 配置当前白注 ante 2–5，尚有差距）</li>
+        <li><b>战绩上限</b>：<span class="tag ref">公开</span> GPT-6 Astra bot 多次通关金注黑牌组（旗舰级）；实测 glm-4-flash（免费档）平均 Ante 1.88，弱于基线启发式</li>
+        <li><b>生态开放</b>：任意 OpenAI 兼容端点即插即用（本项目 llm_layer 一次对接即跑通）</li>
       </ul>
     </div>
   </div>
@@ -217,10 +228,10 @@
 <section>
   <h2><span class="no">7</span>结论</h2>
   <ol>
-    <li><b>效果</b>（实测）：Jev 层带来平均 Ante +0.25、单手爆发 +64%、总得分 +44%，胜负 2:1:5——增量明确但样本尚小（8 种子），且存在反向局，题目集仍在迭代。</li>
-    <li><b>经济性</b>（实测）：$0.0007/局、0.62s/次，比 LLM 方案低 3–4 个数量级——高频决策的合理承载层。</li>
-    <li><b>上限</b>（公开）：GPT-6 级 LLM bot 已通关最高难度，但贵且慢；Jev 当前白注 ante 2–5，上限差距真实存在。</li>
-    <li><b>工程结论</b>：二者是栈内互补而非替代。Jev 负责"每一次商店/盲注"，LLM 负责"每局那 1–2 次关键抉择"，求解器负责一切可精确计算的——这是成本-效果帕累托最优的架构。</li>
+    <li><b>效果</b>（24 局三臂实测）：Jev 平均 Ante 2.88 &gt; 启发式 2.62 &gt; glm-4-flash 1.88；Jev 单手爆发（2475）与总得分（15348）均为三臂第一，且 24 局 0 非法动作。</li>
+    <li><b>经济性</b>（实测）：Jev 0.55s/次、$0.0007/局；glm-4-flash 1.78s/次、免费但战绩垫底——免费小 LLM 难当高频决策主脑。</li>
+    <li><b>上限</b>：旗舰 LLM（公开：GPT-6 bot 金注通关）上限仍高于当前 Jev 配置（白注 ante 2–5，尚未触达无限模式）；差距的本质是"推理深度"，正是三层漏斗里 Tier 2 的职责。</li>
+    <li><b>工程结论</b>：三臂同台数据支持原判断——<b>能用代码算的不用模型，能用 Jev 判断的不用 LLM</b>。无限模式支持已就绪（胜利后自动继续并记录最深深度的代码已内置），待决策层推进到通关后即可产出上限对比数据。</li>
   </ol>
 </section>
 
@@ -228,11 +239,12 @@
 <section>
   <h2><span class="no">8</span>数据来源</h2>
   <ul class="src">
-    <li>实测：本项目 16 局对局 JSONL 日志（jevatro/logs/）、ab_report.md、error_analysis.md（302 次 Jev 真实调用统计）</li>
+    <li>实测：本项目 24 局对局 JSONL 日志（jevatro/logs/）、ab_report.md 三配置汇总（2026-09-22 13:07 批次，4x 游戏速度等速对照）</li>
     <li>Jev 规格：<a href="https://typesafe.ai" target="_blank">TypeSafe AI 官方博客</a> · <a href="https://docs.typesafe.ai/introduction/quickstart.md" target="_blank">官方文档</a>（定价 $0.042/MTok 输入、输出免费、70–500ms）</li>
+    <li>LLM 实测：智谱 open.bigmodel.cn（glm-4-flash 免费档；glm-5/4.6 因账号余额不足返回 1113，充值后 .env 改 ZHIPU_MODEL=glm-5 即可复测旗舰）</li>
     <li>LLM 战绩（公开）：<a href="https://www.tomshardware.com/tech-industry/artificial-intelligence/ai-enthusiast-builds-gpt-6-astra-powered-bot-to-take-on-balatros-gold-stake-black-deck-bot-leverages-python-for-numerical-tools-beats-hardest-difficulty-repeatedly" target="_blank">Tom's Hardware：GPT-6 Astra bot 通关金注黑牌组</a>（2026-09，多次通关、无公开胜率/成本）</li>
-    <li>LLM 延迟/成本估算口径：方案文档 §9（2–5K tokens/步 × GPT-6 类定价），未在本项目实测</li>
-    <li>基准框架：<a href="https://github.com/alesha-pro/evalatro" target="_blank">Evalatro</a>（排行榜 JS 渲染，未能程序化读取）</li>
+    <li>LLM 旗舰级延迟/成本估算口径：方案文档 §9（2–5K tokens/步 × 旗舰定价），未实测</li>
+    <li>基准框架：<a href="https://github.com/alesha-pro/evalatro" target="_blank">Evalatro</a>（无限模式目标 Ante 12）</li>
   </ul>
   <p class="src">小丑牌（Balatro）© LocalThunk · 本对比仅供技术研究</p>
 </section>

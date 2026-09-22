@@ -1,0 +1,242 @@
+[
+ {
+  "seed": "JEVATRO1",
+  "config": "naive",
+  "won": false,
+  "ante": 2,
+  "round": 5,
+  "money": 8,
+  "n_jokers": 3,
+  "wall_s": 103.2
+ },
+ {
+  "seed": "JEVATRO1",
+  "config": "jev",
+  "won": false,
+  "ante": 4,
+  "round": 10,
+  "money": 24,
+  "n_jokers": 5,
+  "wall_s": 231.5
+ },
+ {
+  "seed": "JEVATRO1",
+  "config": "llm",
+  "won": false,
+  "ante": 2,
+  "round": 3,
+  "money": 7,
+  "n_jokers": 0,
+  "wall_s": 83.3
+ },
+ {
+  "seed": "JEVATRO2",
+  "config": "naive",
+  "won": false,
+  "ante": 2,
+  "round": 5,
+  "money": 15,
+  "n_jokers": 3,
+  "wall_s": 93.2
+ },
+ {
+  "seed": "JEVATRO2",
+  "config": "jev",
+  "won": false,
+  "ante": 2,
+  "round": 5,
+  "money": 9,
+  "n_jokers": 4,
+  "wall_s": 88.5
+ },
+ {
+  "seed": "JEVATRO2",
+  "config": "llm",
+  "won": false,
+  "ante": 2,
+  "round": 3,
+  "money": 21,
+  "n_jokers": 2,
+  "wall_s": 74.3
+ },
+ {
+  "seed": "JEVATRO3",
+  "config": "naive",
+  "won": false,
+  "ante": 3,
+  "round": 8,
+  "money": 57,
+  "n_jokers": 5,
+  "wall_s": 150.6
+ },
+ {
+  "seed": "JEVATRO3",
+  "config": "jev",
+  "won": false,
+  "ante": 2,
+  "round": 4,
+  "money": 3,
+  "n_jokers": 3,
+  "wall_s": 80.7
+ },
+ {
+  "seed": "JEVATRO3",
+  "config": "llm",
+  "won": false,
+  "ante": 1,
+  "round": 2,
+  "money": 0,
+  "n_jokers": 1,
+  "wall_s": 54.0
+ },
+ {
+  "seed": "JEVATRO4",
+  "config": "naive",
+  "won": false,
+  "ante": 4,
+  "round": 12,
+  "money": 63,
+  "n_jokers": 5,
+  "wall_s": 219.9
+ },
+ {
+  "seed": "JEVATRO4",
+  "config": "jev",
+  "won": false,
+  "ante": 3,
+  "round": 8,
+  "money": 28,
+  "n_jokers": 5,
+  "wall_s": 139.1
+ },
+ {
+  "seed": "JEVATRO4",
+  "config": "llm",
+  "won": false,
+  "ante": 2,
+  "round": 3,
+  "money": 3,
+  "n_jokers": 2,
+  "wall_s": 93.4
+ },
+ {
+  "seed": "JEVATRO5",
+  "config": "naive",
+  "won": false,
+  "ante": 2,
+  "round": 6,
+  "money": 3,
+  "n_jokers": 5,
+  "wall_s": 142.3
+ },
+ {
+  "seed": "JEVATRO5",
+  "config": "jev",
+  "won": false,
+  "ante": 4,
+  "round": 12,
+  "money": 23,
+  "n_jokers": 5,
+  "wall_s": 259.4
+ },
+ {
+  "seed": "JEVATRO5",
+  "config": "llm",
+  "won": false,
+  "ante": 1,
+  "round": 1,
+  "money": 4,
+  "n_jokers": 0,
+  "wall_s": 25.1
+ },
+ {
+  "seed": "JEVATRO6",
+  "config": "naive",
+  "won": false,
+  "ante": 2,
+  "round": 4,
+  "money": 2,
+  "n_jokers": 5,
+  "wall_s": 67.6
+ },
+ {
+  "seed": "JEVATRO6",
+  "config": "jev",
+  "won": false,
+  "ante": 2,
+  "round": 4,
+  "money": 5,
+  "n_jokers": 3,
+  "wall_s": 67.0
+ },
+ {
+  "seed": "JEVATRO6",
+  "config": "llm",
+  "won": false,
+  "ante": 1,
+  "round": 1,
+  "money": 4,
+  "n_jokers": 0,
+  "wall_s": 23.4
+ },
+ {
+  "seed": "JEVATRO7",
+  "config": "naive",
+  "won": false,
+  "ante": 4,
+  "round": 11,
+  "money": 51,
+  "n_jokers": 5,
+  "wall_s": 187.5
+ },
+ {
+  "seed": "JEVATRO7",
+  "config": "jev",
+  "won": false,
+  "ante": 4,
+  "round": 12,
+  "money": 23,
+  "n_jokers": 5,
+  "wall_s": 209.4
+ },
+ {
+  "seed": "JEVATRO7",
+  "config": "llm",
+  "won": false,
+  "ante": 4,
+  "round": 7,
+  "money": 5,
+  "n_jokers": 5,
+  "wall_s": 162.9
+ },
+ {
+  "seed": "JEVATRO8",
+  "config": "naive",
+  "won": false,
+  "ante": 2,
+  "round": 5,
+  "money": 13,
+  "n_jokers": 3,
+  "wall_s": 84.7
+ },
+ {
+  "seed": "JEVATRO8",
+  "config": "jev",
+  "won": false,
+  "ante": 2,
+  "round": 5,
+  "money": 4,
+  "n_jokers": 3,
+  "wall_s": 87.3
+ },
+ {
+  "seed": "JEVATRO8",
+  "config": "llm",
+  "won": false,
+  "ante": 2,
+  "round": 4,
+  "money": 0,
+  "n_jokers": 3,
+  "wall_s": 89.7
+ }
+]

@@ -78,7 +78,12 @@ def parse_run(path: Path) -> dict | None:
 def collect() -> dict[tuple[str, str], dict]:
     groups: dict[tuple[str, str], dict] = {}
     for path in sorted(LOGS.glob("run_*.jsonl")):
-        cfg = "jev" if "_jev_" in path.name else "naive"
+        if "_jev_" in path.name:
+            cfg = "jev"
+        elif "_llm_" in path.name:
+            cfg = "llm"
+        else:
+            cfg = "naive"
         m = parse_run(path)
         if not m or not m["seed"]:
             continue
@@ -90,56 +95,63 @@ def collect() -> dict[tuple[str, str], dict]:
 
 def report() -> str:
     groups = collect()
+    cfgs = [c for c in ("naive", "jev", "llm") if any(k[1] == c for k in groups)]
+    need = ("naive", "jev", "llm")[: len(cfgs)]
     seeds = sorted({s for s, c in groups if (s, "jev") in groups and (s, "naive") in groups})
-    lines = [f"# 有 Jev vs 无 Jev 深度对比（{len(seeds)} 个种子成对，共 {len(seeds) * 2} 局）",
+    if "llm" in cfgs:
+        seeds = [s for s in seeds if (s, "llm") in groups]
+    lines = [f"# 三配置深度对比（{len(seeds)} 个种子 × {len(cfgs)} 配置，共 {len(seeds) * len(cfgs)} 局）",
              "", "生成时间: " + datetime.now().strftime("%Y-%m-%d %H:%M"), ""]
     if not seeds:
         return "\n".join(lines + ["（无成对数据：请先用 batch_runner.py 跑批量）"])
 
-    header = ("| 种子 | 无Jev: Ante/轮 | 有Jev: Ante/轮 | 胜者 | 最大单手(无/有) | "
-              "总得分(无/有) | 买牌数(无/有) | 用牌数(无/有) | 跳盲(无/有) | 弃牌(无/有) |")
-    lines += [header, "|" + "---|" * 10]
-    wins = {"naive": 0, "jev": 0, "tie": 0}
+    header = ("| 种子 | " + " | ".join(f"{c}: Ante/轮" for c in cfgs) + " | 最深单手分 " +
+              " / ".join(cfgs) + " |")
+    lines += [header, "|" + "---|" * (1 + len(cfgs) + 1)]
+    wins = {c: 0 for c in cfgs}
     for s in seeds:
-        n, j = groups[(s, "naive")], groups[(s, "jev")]
-        if j["ante"] > n["ante"]:
-            w = "Jev"
-            wins["jev"] += 1
-        elif n["ante"] > j["ante"]:
-            w = "无Jev"
-            wins["naive"] += 1
-        else:
-            w = "平"
-            wins["tie"] += 1
+        row = [groups[(s, c)] for c in cfgs]
+        best = max(r["ante"] for r in row)
+        for r in row:
+            if r["ante"] == best:
+                wins[groups and next(c for c in cfgs if groups[(s, c)] is r)] += 1
         lines.append(
-            f"| {s} | {n['ante']}/{n['round']} | {j['ante']}/{j['round']} | {w} "
-            f"| {n['max_hand']}/{j['max_hand']} | {n['total_scored']}/{j['total_scored']} "
-            f"| {n['buys']}/{j['buys']} | {n['uses']}/{j['uses']} "
-            f"| {n['skips']}/{j['skips']} | {n['discards']}/{j['discards']} |")
+            f"| {s} | " + " | ".join(f"{r['ante']}/{r['round']}" for r in row) + " | " +
+            " / ".join(str(r["max_hand"]) for r in row) + " |")
 
     lines += ["", "## 汇总（均值）", "",
-              "| 指标 | 无Jev | 有Jev | 差异 |", "|---|---|---|---|"]
+              "| 指标 | " + " | ".join(cfgs) + " |", "|---" * (len(cfgs) + 1) + "|"]
     for k, label in (("ante", "到达 Ante"), ("round", "到达轮"),
                      ("max_hand", "最大单手分"), ("total_scored", "全场总得分"),
                      ("buys", "购买数"), ("uses", "消耗牌使用数"),
                      ("skips", "跳盲数"), ("discards", "弃牌数"),
-                     ("illegal", "非法动作")):
-        nv = sum(groups[(s, "naive")][k] for s in seeds) / len(seeds)
-        jv = sum(groups[(s, "jev")][k] for s in seeds) / len(seeds)
-        diff = jv - nv
-        lines.append(f"| {label} | {nv:.2f} | {jv:.2f} | {diff:+.2f} |")
+                     ("illegal", "非法动作"), ("duration", "对局时长(s)")):
+        vals = []
+        for c in cfgs:
+            sub = [groups[(s, c)][k] for s in seeds if groups[(s, c)].get(k) is not None]
+            vals.append(f"{sum(sub) / len(sub):.2f}" if sub else "-")
+        lines.append(f"| {label} | " + " | ".join(vals) + " |")
 
-    jev_seeds = [groups[(s, "jev")] for s in seeds]
-    calls = sum(m["jev_calls"] for m in jev_seeds)
-    lat = sum(m["jev_latency"] for m in jev_seeds)
-    lines += [
-        "", "## Jev 层开销", "",
-        f"- 总调用 {calls} 次，总延迟 {lat:.1f}s（平均 {lat / max(calls, 1):.2f}s/次）",
-        f"- 输入按 ~2K tokens/次估算：{calls * 2000 / 1e6:.2f}M tokens ≈ "
-        f"${calls * 2000 / 1e6 * 0.042:.4f}（输出免费）",
-        "", "## 结论要点", "",
-        f"- 胜负：Jev 胜 {wins['jev']}，无Jev 胜 {wins['naive']}，平 {wins['tie']}",
-    ]
+    for c, kind, lat_key, call_key in (("jev", "Jev", "jev_latency", "jev_calls"),
+                                       ("llm", "LLM", "llm_latency", "llm_calls")):
+        if c not in cfgs:
+            continue
+        ms = [groups[(s, c)] for s in seeds]
+        calls = sum(m[call_key] for m in ms)
+        lat = sum(m[lat_key] for m in ms)
+        extra = ""
+        if c == "llm":
+            tin = sum(m.get("llm_in_tokens", 0) for m in ms)
+            tout = sum(m.get("llm_out_tokens", 0) for m in ms)
+            extra = f"，{tin} in / {tout} out tokens（glm-4-flash 免费档）"
+        lines += ["", f"## {kind} 层开销", "",
+                  f"- 总调用 {calls} 次，决策总延迟 {lat:.1f}s（平均 {lat / max(calls, 1):.2f}s/次）{extra}"]
+        if c == "jev":
+            lines.append(f"- 输入按 ~2K tokens/次估算：{calls * 2000 / 1e6:.2f}M tokens ≈ "
+                         f"${calls * 2000 / 1e6 * 0.042:.4f}（输出免费）")
+
+    lines += ["", "## 胜负计数（并列计胜）", ""] + [
+        f"- {c}: {wins[c]} 局最深" for c in cfgs]
     text = "\n".join(lines)
     (LOGS / "ab_report.md").write_text(text, encoding="utf-8")
     return text
