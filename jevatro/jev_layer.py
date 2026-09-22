@@ -40,15 +40,15 @@ WEIGHTS: dict[str, dict[str, float]] = {
     "pair":     {"synergy": 0.45, "scaling": 0.25, "economy": 0.12, "immediate": 0.18},
     "highcard": {"synergy": 0.50, "scaling": 0.30, "economy": 0.08, "immediate": 0.12},
     "straight": {"synergy": 0.45, "scaling": 0.25, "economy": 0.12, "immediate": 0.18},
-    "econ":     {"synergy": 0.22, "scaling": 0.25, "economy": 0.38, "immediate": 0.15},
 }
 
-ARCHETYPES = {
-    "flush":    "当前构筑正走同花(Flush)方向",
-    "pair":     "当前构筑正走对子/三条(Pair/Three of a Kind)方向",
-    "highcard": "当前构筑正走高牌(High Card)+固定加成小丑方向",
-    "straight": "当前构筑正走顺子(Straight)方向",
-    "econ":     "当前处于攒钱/经济运营优先阶段(金币偏低或利息优先)",
+# 方向识别：单题 Choice（旧版 5 连 Noul 有 28% 未达阈值，区分度不足）
+ARCH_CHOICE = {
+    "pair": "对子/三条/满堂方向: 以重复点数为核心",
+    "flush": "同花方向: 以花色一致为核心",
+    "straight": "顺子方向: 以连续点数为核心",
+    "highcard": "高牌+固定加成方向: 少张出牌配合独立数值小丑",
+    "balanced": "方向未定/均衡: 缺乏明确核心, 需要通用成长",
 }
 
 DIMS = {
@@ -142,12 +142,9 @@ class JevLayer:
         state_text = serialize(gs)
         questions: dict = {}
 
-        # 1) archetype fan-out（Noul 批量）——早期战力优先：金币少或小丑不足时禁用 econ 方向
-        arch_candidates = dict(ARCHETYPES)
-        if gs.get("money", 0) < 15 or len(jokers_area.get("cards", [])) < 3:
-            arch_candidates.pop("econ", None)
-        for k, desc in arch_candidates.items():
-            questions[f"arch_{k}"] = _noul(desc)
+        # 1) 方向识别：单题 Choice（据此混合权重表）
+        questions["archetype"] = _choice(
+            "当前构筑的核心方向最接近哪一种(将据此调整商店购买权重)", ARCH_CHOICE)
 
         # 2) 每个候选商品 4 维 Score
         for slot, card, _kind in all_items:
@@ -182,11 +179,9 @@ class JevLayer:
             return _naive_plan(gs)
 
         a = resp.answers
-        # archetype → argmax（超过阈值的最高项，否则 default）
-        arch = "default"
-        best_arch = max(arch_candidates, key=lambda k: a[f"arch_{k}"].noul)
-        if a[f"arch_{best_arch}"].noul >= ARCHETYPE_TAU:
-            arch = best_arch
+        # 方向 → Choice 结果（无效答案回落 default）
+        arch_ans = a.get("archetype")
+        arch = arch_ans.choice if arch_ans and arch_ans.choice in WEIGHTS else "default"
         w_arch = WEIGHTS.get(arch, WEIGHTS["default"])
         w = {k: (1 - BLEND_DEFAULT) * w_arch[k] + BLEND_DEFAULT * WEIGHTS["default"][k]
              for k in DIMS}

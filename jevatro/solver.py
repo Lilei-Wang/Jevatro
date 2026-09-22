@@ -5,22 +5,22 @@ from itertools import combinations
 
 from rules import (boss_rules, effective_hand_levels, is_debuffed,
                    legal_hand_types, most_played_hand)
-from scoring import evaluate_hand, score_play
+from scoring import evaluate_hand, rule_flags, score_play
 
 
 def all_plays(hand_cards: list[dict], rules: dict,
-              only_types: set | None, banned_types: set) -> list[tuple[tuple[int, ...], str]]:
+              only_types: set | None, banned_types: set,
+              flags: dict | None = None) -> list[tuple[tuple[int, ...], str]]:
     out = []
     n = len(hand_cards)
-    k_min = 1
     k_fixed = rules.get("exact_play")
-    ks = [k_fixed] if k_fixed else range(k_min, 6)
+    ks = [k_fixed] if k_fixed else range(1, 6)
     for k in ks:
         if k > n:
             continue
         for combo in combinations(range(n), k):
             played = [hand_cards[i] for i in combo]
-            name, _ = evaluate_hand(played)
+            name, _ = evaluate_hand(played, flags)
             if only_types is not None and name not in only_types:
                 continue
             if name in banned_types:
@@ -37,26 +37,28 @@ def best_play(gamestate: dict) -> dict:
     rules = boss_rules(gs)
     hand_levels = effective_hand_levels(gs, rules)
     only_types, banned_types = legal_hand_types(gs, rules)
+    flags = rule_flags(jokers)
     cards_area = gs.get("cards") or {}
     ctx = {
         "money": gs.get("money", 0),
         "discards_left": gs.get("round", {}).get("discards_left", 0),
         "deck_remaining": cards_area.get("count", 40) if isinstance(cards_area, dict) else 40,
         "joker_slots": gs.get("jokers", {}).get("limit", 5),
+        **flags,
     }
     debuff_idx_global = {i for i, cd in enumerate(hand_cards) if is_debuffed(cd, rules)}
 
-    plays = all_plays(hand_cards, rules, only_types, banned_types)
+    plays = all_plays(hand_cards, rules, only_types, banned_types, flags)
     if not plays and rules.get("exact_play"):
         # 兜底：极端情况下（如 The Mouth 冲突 + Psychic 叠加）放弃牌型过滤保张数
-        plays = [(c, evaluate_hand([hand_cards[i] for i in c])[0])
+        plays = [(c, evaluate_hand([hand_cards[i] for i in c], flags)[0])
                  for c in combinations(range(len(hand_cards)), rules["exact_play"])
                  if len(c) <= len(hand_cards)]
 
     ranked = []
     for combo, name in plays:
         played = [hand_cards[i] for i in combo]
-        _, scoring_idx = evaluate_hand(played)
+        _, scoring_idx = evaluate_hand(played, flags)
         debuffed = {i for i in debuff_idx_global if i in combo}
         s = score_play(played, scoring_idx, name, hand_levels, jokers, ctx,
                        debuff_idx=debuffed)

@@ -53,15 +53,18 @@ def analyze() -> str:
                     skip_nouls.append(a.get("noul", 0))
                 elif k == "reroll_worth":
                     reroll_nouls.append(a.get("noul", 0))
-            # 方向 argmax（超过阈值才计）
-            arch_ans = {k[5:]: a.get("noul", 0) for k, a in r.get("answers", {}).items()
+            # 方向识别（兼容旧版 arch_* Noul 与新版 archetype Choice）
+            arch_old = {k[5:]: a.get("noul", 0) for k, a in r.get("answers", {}).items()
                         if k.startswith("arch_")}
-            if arch_ans:
-                best = max(arch_ans, key=arch_ans.get)
-                if arch_ans[best] >= 0.50:
+            if arch_old:
+                best = max(arch_old, key=arch_old.get)
+                if arch_old[best] >= 0.50:
                     arch_picks[best] += 1
                 else:
                     arch_picks["(未达阈值→default)"] += 1
+            elif "archetype" in r.get("answers", {}):
+                ch = r["answers"]["archetype"].get("choice", "?")
+                arch_picks[ch] += 1
 
     def _avg(xs):
         return sum(xs) / len(xs) if xs else 0.0

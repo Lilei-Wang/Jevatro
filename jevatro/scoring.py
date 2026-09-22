@@ -42,30 +42,52 @@ def _rank_counts(cards):
     return c
 
 
-def _is_flush(cards) -> bool:
+def rule_flags(jokers: list[dict]) -> dict:
+    """规则改变型小丑检测（影响牌型判定本身，非数值加成）。"""
+    keys = {j.get("key") for j in jokers}
+    return {
+        "splash": "j_splash" in keys,            # 打出的牌全部计分
+        "four_fingers": "j_four_fingers" in keys,  # 4张即可成同花/顺子
+        "shortcut": "j_shortcut" in keys,        # 顺子允许1个间隔
+    }
+
+
+def _is_flush(cards, four_fingers: bool = False) -> bool:
+    need = 4 if four_fingers else 5
     non_stone = [cd for cd in cards if "STONE" not in mods(cd)]
-    if len(cards) != 5:
+    if len(cards) < need or len(non_stone) < need:
         return False
     suits = {cd["value"]["suit"] for cd in non_stone}
     wilds = any("WILD" in mods(cd) for cd in non_stone)
-    if len(non_stone) < 5:
-        return False
     return len(suits) == 1 or wilds
 
 
-def _is_straight(ranks: list[int]) -> bool:
-    if len(ranks) != 5:
+def _is_straight(ranks: list[int], shortcut: bool = False, four_fingers: bool = False) -> bool:
+    need = 4 if four_fingers else 5
+    if len(ranks) < need:
         return False
     s = sorted(set(ranks))
-    if len(s) != 5:
+    if len(s) < need:
         return False
-    if s[-1] - s[0] == 4:
+    if len(s) == 5 and s == [2, 3, 4, 5, 14]:  # A-5 低顺
         return True
-    return s == [2, 3, 4, 5, 14]  # A-5 低顺
+    span = s[-1] - s[0]
+    max_span = (need - 1) + (1 if shortcut else 0)
+    if span > max_span:
+        return False
+    if not shortcut:
+        return span == need - 1 and len(s) == need
+    # shortcut: 相邻差 ∈ {1,2} 且数量足够
+    diffs = [b - a for a, b in zip(s, s[1:])]
+    return len(s) >= need and all(d in (1, 2) for d in diffs)
 
 
-def evaluate_hand(played: list[dict]) -> tuple[str, list[int]]:
-    """返回 (牌型名, 计分的出牌下标)。played 为 1-5 张已选卡。"""
+def evaluate_hand(played: list[dict], flags: dict | None = None) -> tuple[str, list[int]]:
+    """返回 (牌型名, 计分的出牌下标)。played 为 1-5 张已选卡。
+
+    flags: rule_flags() 的结果（four_fingers/shortcut 影响牌型判定）。
+    """
+    flags = flags or {}
     non_stone = [(i, cd) for i, cd in enumerate(played) if "STONE" not in mods(cd)]
     stone_idx = [i for i, cd in enumerate(played) if "STONE" in mods(cd)]
 
@@ -73,8 +95,8 @@ def evaluate_hand(played: list[dict]) -> tuple[str, list[int]]:
     counts = _rank_counts([cd for _, cd in non_stone])
     n = len(played)
     cv = sorted(counts.values(), reverse=True)
-    flush = _is_flush(played)
-    straight = _is_straight(ranks)
+    flush = _is_flush(played, flags.get("four_fingers", False))
+    straight = _is_straight(ranks, flags.get("shortcut", False), flags.get("four_fingers", False))
 
     def idx_of_rank(r: str) -> list[int]:
         return [i for i, cd in non_stone if cd["value"]["rank"] == r]
@@ -261,7 +283,9 @@ def score_play(
     mult_add = float(base["mult"])
     mult_mul = 1.0
 
-    scoring = [played[i] for i in scoring_idx if i not in debuff_idx]
+    scoring = [played[i] for i in scoring_idx]
+    if ctx.get("splash"):  # j_splash: 打出的牌全部计分
+        scoring = [cd for i, cd in enumerate(played) if i not in debuff_idx]
     for cd in scoring:
         chips += _card_chips(cd) + _enh_chips(cd)
         a, m = _card_mult(cd)
