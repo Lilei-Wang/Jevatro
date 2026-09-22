@@ -1,9 +1,9 @@
-"""Jevatro Agent Lab —— 决策观测台（本地 Web，纯标准库）。
+"""Jevatro 决策观测台（本地 Web，纯标准库）。
 
 用法: python dashboard.py  →  http://127.0.0.1:8765
-双栏布局（参考 Jev Tetris 风格）：
-  左 01 PLAYGROUND      实时游戏截图 + 局面数据（盲注/金币/手牌/小丑/商店）
-  右 02 DECISION STREAM  实时决策流（Jev/LLM 调用原文、动作、统计）
+双栏布局：
+  左 01 对局实况   实时截图 + 局面数据（盲注/手牌[绿框=建议出牌]/小丑/商店）
+  右 02 决策流     时间正序自动滚动跟随（动作/Jev/LLM 卡片，展开原文）
 """
 from __future__ import annotations
 
@@ -17,12 +17,29 @@ from urllib.parse import urlparse
 
 import requests
 
+from card_desc import CARD_DESC
+
 LOG_DIR = Path(__file__).parent / "logs"
 SHOT_DIR = LOG_DIR / "_shots"
 PORT = 8765
 GAME_API = "http://127.0.0.1:12346"
 
 _shot_cache = {"t": 0.0, "b64": ""}
+
+CFG_ZH = {"jev": "JEV驱动", "llm": "LLM驱动", "naive": "基线"}
+
+
+def _enrich(gs: dict) -> dict:
+    """给各卡区的卡补上中文释义字段 _desc（来自本地卡牌释义库）。"""
+    if not isinstance(gs, dict):
+        return gs
+    for area in ("hand", "jokers", "consumables", "shop", "vouchers", "packs", "pack"):
+        cards = (gs.get(area) or {}).get("cards")
+        if isinstance(cards, list):
+            for c in cards:
+                if isinstance(c, dict):
+                    c["_desc"] = CARD_DESC.get(c.get("key", ""), "")
+    return gs
 
 
 def load_runs():
@@ -41,7 +58,7 @@ def load_runs():
         cfg = ("jev" if "_jev_" in f.name
                else "llm" if "_llm_" in f.name else "naive")
         runs.append({
-            "file": f.name, "config": cfg, "live": result == {},
+            "file": f.name, "config": CFG_ZH[cfg], "live": result == {},
             "records": len(recs),
             "jev_calls": sum(1 for r in recs if r.get("kind") == "jev"),
             "llm_calls": sum(1 for r in recs if r.get("kind") == "llm"),
@@ -67,9 +84,23 @@ def fetch_gamestate():
     try:
         r = requests.post(GAME_API, json={"jsonrpc": "2.0", "id": 1,
                                           "method": "gamestate"}, timeout=6)
-        return r.json().get("result"), None
+        return _enrich(r.json().get("result")), None
     except Exception as e:
         return None, str(e)[:80]
+
+
+def fetch_hint():
+    """实时求解器建议：出牌阶段返回最优出牌下标（用于手牌绿框）。"""
+    try:
+        from solver import best_play
+        gs, err = fetch_gamestate()
+        if err or not isinstance(gs, dict) or gs.get("state") != "SELECTING_HAND":
+            return {"indices": [], "hand": None, "total": 0}
+        bp = best_play(gs)
+        return {"indices": bp["indices"], "hand": bp["hand"],
+                "total": round(bp["total"], 1)}
+    except Exception as e:
+        return {"indices": [], "hand": None, "total": 0, "error": str(e)[:80]}
 
 
 def fetch_shot():
@@ -92,308 +123,384 @@ PAGE = r"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<title>Jevatro · Agent Lab</title>
+<title>Jevatro · 决策观测台</title>
 <style>
   :root{
-    --bg:#0d0f12; --card:#14171c; --card2:#191d24; --line:#262b33;
-    --txt:#e6e9ef; --muted:#8b93a3; --green:#22c55e; --red:#e5484d;
-    --blue:#3b82f6; --amber:#f59e0b; --mono:Consolas,'Cascadia Code',monospace;
+    --bg:#0c0e12; --card:#151920; --card2:#1a1f28; --line:#2a303c;
+    --txt:#e8ecf3; --muted:#9aa3b5; --dim:#5f6878;
+    --green:#34d399; --red:#f87171; --blue:#60a5fa; --amber:#fbbf24;
+    --mono:Consolas,'Cascadia Code',monospace;
   }
   *{box-sizing:border-box;margin:0;padding:0}
-  body{background:var(--bg);color:var(--txt);font:14px/1.6 'Segoe UI','Microsoft YaHei',sans-serif}
+  body{background:var(--bg);color:var(--txt);
+       font:14px/1.65 'Segoe UI','Microsoft YaHei',sans-serif}
   header{display:flex;align-items:center;gap:14px;padding:12px 22px;
-         border-bottom:1px solid var(--line);background:#101318;position:sticky;top:0;z-index:9}
-  .logo{display:flex;align-items:center;gap:8px;font-weight:800;font-size:16px;letter-spacing:.5px}
-  .logo .chip{width:26px;height:26px;border-radius:50%;background:var(--red);color:#fff;
+         border-bottom:1px solid var(--line);background:#10141a;
+         position:sticky;top:0;z-index:9}
+  .logo{display:flex;align-items:center;gap:9px;font-weight:800;font-size:16px}
+  .logo .chip{width:27px;height:27px;border-radius:50%;background:#e5484d;color:#fff;
     display:flex;align-items:center;justify-content:center;font-size:13px;
-    border:2px dashed rgba(255,255,255,.5)}
-  .lab{color:var(--muted);font-size:11px;letter-spacing:3px;margin-top:4px}
-  .dots{display:flex;gap:14px;margin-left:auto;font-size:12px;color:var(--muted)}
+    border:2px dashed rgba(255,255,255,.55)}
+  .lab{color:var(--muted);font-size:10.5px;letter-spacing:4px;margin-top:3px}
+  .dots{display:flex;gap:16px;margin-left:auto;font-size:12.5px;color:var(--muted);
+        align-items:center}
   .dot{display:flex;align-items:center;gap:6px}
-  .dot i{width:8px;height:8px;border-radius:50%;background:#555;display:inline-block}
-  .dot.on i{background:var(--green);box-shadow:0 0 8px var(--green)}
+  .dot i{width:8px;height:8px;border-radius:50%;background:#4b5563;display:inline-block}
+  .dot.on i{background:var(--green);box-shadow:0 0 8px rgba(52,211,153,.7)}
   .dot.off i{background:var(--red)}
   select{background:var(--card2);color:var(--txt);border:1px solid var(--line);
-    border-radius:6px;padding:4px 8px;font-size:12px}
-  .wrap{display:grid;grid-template-columns:minmax(420px,44%) 1fr;gap:16px;padding:16px 22px;
-        max-width:1560px;margin:0 auto}
+    border-radius:7px;padding:5px 9px;font-size:12px;max-width:280px}
+  label{font-size:12px;color:var(--muted);display:flex;gap:5px;align-items:center}
+  .wrap{display:grid;grid-template-columns:minmax(430px,45%) 1fr;gap:16px;
+        padding:16px 22px;max-width:1600px;margin:0 auto}
   @media(max-width:980px){.wrap{grid-template-columns:1fr}}
-  .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:13px;
          padding:16px 18px;margin-bottom:16px}
-  .ptitle{font-size:11px;color:var(--muted);letter-spacing:2px;margin-bottom:12px;
-          display:flex;align-items:center;gap:8px}
-  .ptitle b{color:var(--txt);font-size:13px;letter-spacing:1px}
-  .ptitle .live{margin-left:auto;color:var(--green);font-size:11px;letter-spacing:1px}
-  .shot{width:100%;border-radius:8px;border:1px solid var(--line);display:block;
-        background:#000;min-height:120px}
-  .grid2{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}
-  .stat{background:var(--card2);border:1px solid var(--line);border-radius:8px;
-        padding:8px 10px;text-align:center}
-  .stat b{display:block;font-size:18px;font-family:var(--mono);color:var(--green)}
+  .ptitle{font-size:12px;color:var(--muted);margin-bottom:12px;
+          display:flex;align-items:center;gap:9px}
+  .ptitle b{color:var(--txt);font-size:13.5px;letter-spacing:1px}
+  .ptitle .no{color:var(--dim);font-family:var(--mono);font-size:11px}
+  .ptitle .live{margin-left:auto;color:var(--green);font-size:11px}
+  .shot{width:100%;border-radius:9px;border:1px solid var(--line);display:block;
+        background:#000;min-height:110px}
+  .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}
+  .stat{background:var(--card2);border:1px solid var(--line);border-radius:9px;
+        padding:9px 8px;text-align:center}
+  .stat b{display:block;font-size:17px;font-family:var(--mono);color:var(--txt)}
   .stat span{font-size:11px;color:var(--muted)}
-  .stat b.warn{color:var(--amber)} .stat b.bad{color:var(--red)}
-  .hand{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
-  .card{min-width:42px;height:58px;border-radius:7px;background:var(--card2);
-        border:1px solid var(--line);display:flex;flex-direction:column;
-        align-items:center;justify-content:center;font-family:var(--mono)}
-  .card .r{font-size:16px;font-weight:700}.card .s{font-size:13px}
-  .R{color:var(--red)} .B{color:#dbe4f3}
-  .card .m{font-size:9px;color:var(--amber);margin-top:2px;max-width:40px;
-           overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .card.sel{outline:2px solid var(--green)}
-  .jrow{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
-  .jok{background:var(--card2);border:1px solid #3a2f2a;border-radius:7px;padding:5px 9px;
-       font-size:11.5px;font-family:var(--mono);color:#f0c9a0;max-width:100%}
+  .stat b.money{color:var(--amber)} .stat b.chips{color:var(--red)}
   .rowline{display:flex;justify-content:space-between;font-size:12.5px;
-           color:var(--muted);padding:3px 0;border-bottom:1px dashed #1e232b}
-  .rowline b{color:var(--txt);font-family:var(--mono);font-weight:600}
-  .stream{display:flex;flex-direction:column;gap:10px;max-height:78vh;overflow-y:auto;padding-right:4px}
-  .ev{background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:10px 13px}
+           color:var(--muted);padding:3.5px 0;border-bottom:1px dashed #232935}
+  .rowline b{color:var(--txt);font-family:var(--mono);font-weight:600;text-align:right}
+  .sec{margin-top:12px;font-size:11px;color:var(--dim);letter-spacing:1px}
+  .hand{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+  .pcard{min-width:44px;height:60px;border-radius:8px;background:var(--card2);
+         border:1px solid var(--line);display:flex;flex-direction:column;
+         align-items:center;justify-content:center;font-family:var(--mono)}
+  .pcard .r{font-size:16px;font-weight:700}.pcard .s{font-size:13px}
+  .R{color:#ff8a8a} .B{color:#cdd8ea}
+  .pcard .m{font-size:9px;color:var(--amber);margin-top:1px;max-width:42px;
+            overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pcard.hint{outline:2px solid var(--green);box-shadow:0 0 10px rgba(52,211,153,.35)}
+  .item{display:flex;justify-content:space-between;gap:8px;background:var(--card2);
+        border:1px solid var(--line);border-radius:8px;padding:6px 10px;
+        margin-top:6px;font-size:12px}
+  .item .k{font-family:var(--mono);color:#f0c9a0;word-break:break-all}
+  .item .d{color:var(--muted);font-size:11px;flex:1;padding-left:8px}
+  .item .p{color:var(--amber);font-family:var(--mono);white-space:nowrap}
+  .stream{position:relative}
+  .streambox{display:flex;flex-direction:column;gap:10px;max-height:74vh;
+             overflow-y:auto;padding-right:6px;scroll-behavior:smooth}
+  .streambox::-webkit-scrollbar{width:8px}
+  .streambox::-webkit-scrollbar-thumb{background:#2a303c;border-radius:4px}
+  .tobot{position:sticky;bottom:6px;align-self:flex-end;background:var(--green);
+         color:#06281c;border:none;border-radius:999px;padding:6px 14px;
+         font-size:12px;font-weight:700;cursor:pointer;display:none;z-index:5}
+  .ev{background:var(--card2);border:1px solid var(--line);border-radius:10px;
+      padding:10px 13px;transition:border-color .15s}
+  .ev:hover{border-color:#3a4250}
   .ev .h{display:flex;align-items:center;gap:9px;cursor:pointer;flex-wrap:wrap}
-  .tag{font-size:10px;font-weight:800;letter-spacing:1px;border-radius:5px;padding:2px 8px}
-  .tag.action{background:#0e2a1a;color:var(--green)}
-  .tag.jev{background:#2a1214;color:#ff8f94}
-  .tag.llm{background:#12213a;color:#7fb0ff}
+  .tag{font-size:10px;font-weight:800;letter-spacing:1px;border-radius:5px;
+       padding:2px 8px;white-space:nowrap}
+  .tag.action{background:#0d2b1d;color:var(--green)}
+  .tag.jev{background:#331519;color:#ff9ba0}
+  .tag.llm{background:#14233d;color:#8ab6ff}
   .tag.jev_error{background:#3b0d0a;color:#ffb4ad}
-  .tag.result{background:#1a2f3b;color:#7fd6ff}
+  .tag.result{background:#15303b;color:#7fd6ff}
   .tag.sys{background:#22242a;color:var(--muted)}
-  .t{color:#5c6575;font-size:11px;font-family:var(--mono);min-width:48px}
-  .sum{font-size:12.5px;color:#c8d0dd}
+  .t{color:var(--dim);font-size:11px;font-family:var(--mono);min-width:48px}
+  .sum{font-size:12.5px;color:#ccd4e2}
   .sum b{color:var(--green)} .sum i{color:var(--amber);font-style:normal}
-  .why{color:#6b7280;font-size:11.5px}
+  .why{color:var(--dim);font-size:11.5px}
   .err{color:var(--red);font-size:11.5px}
-  .d{display:none;margin-top:9px;border-top:1px dashed #262b33;padding-top:8px}
+  .d{display:none;margin-top:9px;border-top:1px dashed #2a303c;padding-top:8px}
   .ev.open .d{display:block}
-  pre{background:#0b0d10;border:1px solid #1e232b;border-radius:8px;padding:10px;
+  pre{background:#0a0d11;border:1px solid #222833;border-radius:8px;padding:10px;
       font-size:11.5px;line-height:1.5;color:#b7c2d4;overflow-x:auto;
       white-space:pre-wrap;word-break:break-all;font-family:var(--mono);max-height:300px}
-  .qa{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
-  .q{flex:1 1 240px;background:#10141a;border:1px solid #232833;border-radius:8px;padding:8px 10px}
-  .q .k{font-size:11px;font-weight:700;color:#7fb0ff;font-family:var(--mono);
+  .lbl{font-size:10.5px;color:var(--dim);margin:6px 0 4px}
+  .qa{display:flex;gap:8px;flex-wrap:wrap}
+  .q{flex:1 1 240px;background:#10141a;border:1px solid #232935;border-radius:8px;
+     padding:8px 10px}
+  .q .k{font-size:11px;font-weight:700;color:#8ab6ff;font-family:var(--mono);
         word-break:break-all}
   .q .v{font-size:12px;margin-top:3px;font-family:var(--mono);color:var(--green)}
-  .q .p{font-size:10.5px;color:#5c6575;margin-top:3px}
+  .q .p{font-size:10.5px;color:var(--dim);margin-top:3px}
   .bar{height:4px;background:#1e232b;border-radius:2px;margin-top:5px}
   .bar i{display:block;height:100%;border-radius:2px;background:var(--green)}
   .copy{float:right;font-size:10.5px;color:var(--muted);cursor:pointer;
         border:1px solid var(--line);border-radius:5px;padding:1px 7px}
-  .copy:hover{color:var(--txt)}
+  .copy:hover{color:var(--txt);border-color:#3a4250}
   .empty{color:var(--muted);text-align:center;padding:36px 0;font-size:13px}
-  .cfgtag{font-size:10px;border-radius:4px;padding:1px 6px;font-weight:700}
-  .cfgtag.jev{background:#2a1214;color:#ff8f94}
-  .cfgtag.llm{background:#12213a;color:#7fb0ff}
-  .cfgtag.naive{background:#22242a;color:var(--muted)}
+  #hHint{font-size:11px;color:var(--green);margin-left:6px;font-family:var(--mono)}
 </style>
 </head>
 <body>
 <header>
-  <div class="logo"><span class="chip">🃏</span><div>JEVATRO<div class="lab">AGENT LAB</div></div></div>
+  <div class="logo"><span class="chip">🃏</span>
+    <div>JEVATRO<div class="lab">决策观测台</div></div></div>
   <div class="dots">
-    <span class="dot" id="dGame"><i></i>balatrobot</span>
+    <span class="dot" id="dGame"><i></i>游戏接口</span>
     <span class="dot" id="dRun"><i></i>对局</span>
-    <span style="min-width:200px">
-      <select id="runSel" onchange="selRun(this.value)"></select>
-    </span>
-    <label style="font-size:12px;color:var(--muted)">
-      <input type="checkbox" id="follow" checked> 跟随最新</label>
+    <select id="runSel" onchange="selRun(this.value)"></select>
+    <label><input type="checkbox" id="follow" checked>跟随最新</label>
   </div>
 </header>
 
 <div class="wrap">
-  <!-- 左：PLAYGROUND -->
+  <!-- 左：对局实况 -->
   <div>
     <div class="panel">
-      <div class="ptitle"><b>01</b> PLAYGROUND · 当前局面
+      <div class="ptitle"><span class="no">01</span><b>对局实况</b>
         <span class="live" id="gstate">—</span></div>
       <img class="shot" id="shot" alt="游戏画面加载中…">
-      <div class="grid2">
-        <div class="stat"><b id="sAnte">-</b><span>Ante</span></div>
-        <div class="stat"><b id="sRound">-</b><span>轮</span></div>
-        <div class="stat"><b id="sMoney" class="warn">-</b><span>金币</span></div>
-        <div class="stat"><b id="sChips" class="bad">-</b><span>chips/需求</span></div>
+      <div class="grid4">
+        <div class="stat"><b id="sAnte">-</b><span>底注轮</span></div>
+        <div class="stat"><b id="sRound">-</b><span>回合</span></div>
+        <div class="stat"><b id="sMoney" class="money">-</b><span>金币</span></div>
+        <div class="stat"><b id="sChips" class="chips">-</b><span>得分/需求</span></div>
       </div>
       <div style="margin-top:12px">
-        <div class="rowline"><span>状态</span><b id="gPhase">-</b></div>
-        <div class="rowline"><span>手牌</span><b id="gHands">-</b></div>
-        <div class="rowline"><span>盲注</span><b id="gBlind">-</b></div>
+        <div class="rowline"><span>阶段</span><b id="gPhase">-</b></div>
+        <div class="rowline"><span>手数 / 弃牌</span><b id="gHands">-</b></div>
+        <div class="rowline"><span>当前盲注</span><b id="gBlind">-</b></div>
       </div>
-      <div style="margin-top:10px;font-size:11px;color:var(--muted)">手牌（绿框=求解器将打出）</div>
+      <div class="sec">手牌<span id="hHint"></span>（绿框 = 求解器建议打出）</div>
       <div class="hand" id="handCards"></div>
-      <div style="margin-top:10px;font-size:11px;color:var(--muted)">小丑</div>
-      <div class="jrow" id="jokers"></div>
+      <div class="sec">小丑</div>
+      <div id="jokers"></div>
+      <div class="sec">商店</div>
+      <div id="shop"></div>
+      <div class="sec">兑换券</div>
+      <div id="vouchers"></div>
     </div>
   </div>
 
-  <!-- 右：DECISION STREAM -->
+  <!-- 右：决策流 -->
   <div>
     <div class="panel">
-      <div class="ptitle"><b>02</b> DECISION STREAM
-        <span class="live" id="streamLive">● LIVE</span></div>
-      <div class="grid2" style="grid-template-columns:repeat(4,1fr)">
-        <div class="stat"><b id="kActs">-</b><span>动作</span></div>
-        <div class="stat"><b id="kJev">-</b><span>Jev 调用</span></div>
+      <div class="ptitle"><span class="no">02</span><b>决策流</b>
+        <span class="live">● 实时</span></div>
+      <div class="grid4">
+        <div class="stat"><b id="kActs">-</b><span>动作数</span></div>
+        <div class="stat"><b id="kJev">-</b><span>模型调用</span></div>
         <div class="stat"><b id="kLat">-</b><span>平均耗时</span></div>
-        <div class="stat"><b id="kTok">-</b><span>tokens(入/出)</span></div>
+        <div class="stat"><b id="kTok">-</b><span>令牌(入/出)</span></div>
       </div>
-      <div class="stream" id="stream"><div class="empty">读取决策记录…</div></div>
+      <div class="stream">
+        <div class="streambox" id="stream">
+          <div class="empty">读取决策记录…</div>
+        </div>
+        <button class="tobot" id="tobot" onclick="jumpBottom()">↓ 最新</button>
+      </div>
     </div>
   </div>
 </div>
 
 <script>
-let cur = null, runs = [];
+let cur=null, runs=[], hint={indices:[]}, lastCount=-1;
+
+const ZH_STATE={MENU:'主菜单',BLIND_SELECT:'选择盲注',SELECTING_HAND:'出牌阶段',
+  ROUND_EVAL:'回合结算',SHOP:'商店',SMODS_BOOSTER_OPENED:'开包选择',GAME_OVER:'游戏结束'};
+const ZH_MOD={FOIL:'闪箔',HOLO:'镭射',POLYCHROME:'多彩',NEGATIVE:'负片',BONUS:'奖励牌',
+  MULT:'倍率牌',WILD:'百搭',GLASS:'玻璃',STEEL:'钢铁',STONE:'石头',GOLD:'黄金',
+  LUCKY:'幸运',RED:'红印',BLUE:'蓝印',PURPLE:'紫印',eternal:'永恒',rental:'租金',
+  perishable:'易逝'};
+const ZH_SET={JOKER:'小丑',PLANET:'星球',TAROT:'塔罗',SPECTRAL:'幻灵',
+  VOUCHER:'兑换券',BOOSTER:'卡包',DEFAULT:'牌',ENHANCED:'强化牌'};
+const SUIT={S:'♠',H:'♥',D:'♦',C:'♣'};
+
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;')}
+function modZh(m){return (m||[]).filter(x=>x&&x!=='None').map(x=>ZH_MOD[x]||x).join('/')}
 
 async function refreshRuns(){
-  runs = await (await fetch('/api/runs')).json();
-  const sel = document.getElementById('runSel');
-  const follow = document.getElementById('follow').checked;
-  if (follow && runs.length) cur = runs[0].file;
-  sel.innerHTML = runs.map(r =>
-    `<option value="${r.file}" ${cur===r.file?'selected':''}>
-      ${r.config.toUpperCase()} · ${r.file.replace(/^run_.*?_\d{4}/,'')}
-      ${r.live?'·进行中':(r.final&&r.final.won?'·🏆胜':'·ante'+(r.final?r.final.ante:'?'))}</option>`).join('');
-  document.getElementById('dRun').className =
-    'dot ' + (cur ? 'on' : 'off');
+  runs=await (await fetch('/api/runs')).json();
+  const sel=document.getElementById('runSel');
+  if(document.getElementById('follow').checked && runs.length) cur=runs[0].file;
+  sel.innerHTML=runs.map(r=>{
+    const label=`${r.config} · ${r.file.replace(/^run_.*?_\d{4}/,'')}` +
+      (r.live?' ·进行中':(r.final&&r.final.won?' ·🏆通关':' ·至底注轮'+(r.final?r.final.ante:'?')));
+    return `<option value="${r.file}" ${cur===r.file?'selected':''}>${label}</option>`;
+  }).join('');
+  document.getElementById('dRun').className='dot '+(cur?'on':'off');
 }
-function selRun(f){ cur = f; document.getElementById('follow').checked = false; renderRun(); }
+function selRun(f){cur=f;document.getElementById('follow').checked=false;
+  lastCount=-1;renderRun();}
 
 async function refreshGame(){
   try{
-    const gs = await (await fetch('/api/gamestate')).json();
-    const d = document.getElementById('dGame');
-    if (gs.error){ d.className='dot off'; return; }
+    const gs=await (await fetch('/api/gamestate')).json();
+    const d=document.getElementById('dGame');
+    if(gs.error){d.className='dot off';return;}
     d.className='dot on';
-    const g = gs.state;
-    document.getElementById('gPhase').textContent = g.state || '-';
-    document.getElementById('sAnte').textContent = g.ante_num ?? '-';
-    document.getElementById('sRound').textContent = g.round_num ?? '-';
-    document.getElementById('sMoney').textContent = '$' + (g.money ?? '-');
-    const r = g.round || {};
-    const blind = Object.values(g.blinds||{}).find(b=>b && b.status==='CURRENT'||b && b.status==='SELECT');
-    document.getElementById('sChips').textContent =
-      (r.chips||0) + '/' + (blind ? blind.score : '-');
-    document.getElementById('gBlind').textContent =
-      blind ? `${blind.name} 需${blind.score}${blind.effect?' ('+blind.effect+')':''}` : '-';
-    document.getElementById('gHands').textContent =
-      `${r.hands_left??'-'}手 / ${r.discards_left??'-'}弃`;
-    const hand = (g.hand||{}).cards||[];
-    document.getElementById('handCards').innerHTML = hand.map(c=>{
-      const v=c.value||{}, m=(c.modifier||[]).filter(x=>!['None'].includes(x));
-      const red = v.suit==='H'||v.suit==='D';
-      return `<div class="card"><span class="r ${red?'R':'B'}">${v.rank||'?'}</span>
-        <span class="s ${red?'R':'B'}">${({S:'♠',H:'♥',D:'♦',C:'♣'})[v.suit]||''}</span>
-        ${m.length?`<span class="m">${m.join('/')}</span>`:''}</div>`;}).join('')
-      || '<span style="color:#5c6575;font-size:12px">（非出牌阶段）</span>';
-    const jk = (g.jokers||{}).cards||[];
-    document.getElementById('jokers').innerHTML = jk.map(j=>
-      `<span class="jok">${j.key}</span>`).join('')
-      || '<span style="color:#5c6575;font-size:12px">无</span>';
+    const g=gs.state;
+    document.getElementById('gPhase').textContent=ZH_STATE[g.state]||g.state||'-';
+    document.getElementById('sAnte').textContent=g.ante_num??'-';
+    document.getElementById('sRound').textContent=g.round_num??'-';
+    document.getElementById('sMoney').textContent='$'+(g.money??'-');
+    const r=g.round||{};
+    const blind=[...Object.values(g.blinds||{})].find(b=>b&&(b.status==='CURRENT'||b.status==='SELECT'));
+    document.getElementById('sChips').textContent=(r.chips||0)+'/'+(blind?blind.score:'-');
+    document.getElementById('gBlind').textContent=blind?
+      `${blind.name} 需${blind.score}${blind.effect?'（'+blind.effect+'）':''}`:'-';
+    document.getElementById('gHands').textContent=`${r.hands_left??'-'}手 / ${r.discards_left??'-'}弃`;
+    const hintSet=new Set(hint.indices||[]);
+    const hand=(g.hand||{}).cards||[];
+    document.getElementById('handCards').innerHTML=hand.map((c,i)=>{
+      const v=c.value||{},red=v.suit==='H'||v.suit==='D',m=modZh(c.modifier);
+      return `<div class="pcard ${hintSet.has(i)?'hint':''}">
+        <span class="r ${red?'R':'B'}">${v.rank||'?'}</span>
+        <span class="s ${red?'R':'B'}">${SUIT[v.suit]||''}</span>
+        ${m?`<span class="m">${esc(m)}</span>`:''}</div>`;}).join('')
+      ||'<span style="color:#5f6878;font-size:12px">（非出牌阶段）</span>';
+    document.getElementById('hHint').textContent =
+      hint.hand?` → 建议：${hint.hand} ≈${hint.total}分`:'';
+    const jk=(g.jokers||{}).cards||[];
+    document.getElementById('jokers').innerHTML=jk.map(j=>
+      itemHtml(j.label||j.key,j._desc,'')).join('')
+      ||'<span style="color:#5f6878;font-size:12px">无</span>';
+    const shop=(g.shop||{}).cards||[];
+    document.getElementById('shop').innerHTML=shop.map(c=>
+      itemHtml(`${ZH_SET[c.set]||c.set}·${c.label||c.key}`,c._desc,
+        '$'+(c.cost&&c.cost.buy??'?'))).join('')
+      ||'<span style="color:#5f6878;font-size:12px">（非商店阶段）</span>';
+    const vs=(g.vouchers||{}).cards||[];
+    document.getElementById('vouchers').innerHTML=vs.map(c=>
+      itemHtml(c.label||c.key,c._desc,'$'+(c.cost&&c.cost.buy??'?'))).join('')
+      ||'<span style="color:#5f6878;font-size:12px">无</span>';
+  }catch(e){}
+}
+function itemHtml(name,desc,price){
+  return `<div class="item"><span class="k">${esc(name)}</span>` +
+    (desc?`<span class="d">${esc(desc).slice(0,60)}</span>`:'') +
+    (price?`<span class="p">${esc(price)}</span>`:'') + `</div>`;
+}
+
+async function refreshHint(){
+  try{hint=await (await fetch('/api/hint')).json();}catch(e){}
+}
+async function refreshShot(){
+  try{const d=await (await fetch('/api/shot')).json();
+    if(d.b64)document.getElementById('shot').src='data:image/png;base64,'+d.b64;
   }catch(e){}
 }
 
-async function refreshShot(){
-  try{
-    const d = await (await fetch('/api/shot')).json();
-    if (d.b64) document.getElementById('shot').src = 'data:image/png;base64,' + d.b64;
-  }catch(e){}
-}
+function nearBottom(el){return el.scrollHeight-el.scrollTop-el.clientHeight<48}
+function jumpBottom(){const el=document.getElementById('stream');
+  el.scrollTop=el.scrollHeight;
+  document.getElementById('tobot').style.display='none';}
 
 async function renderRun(){
-  if (!cur) return;
-  const recs = await (await fetch('/api/run/' + cur)).json();
-  const acts = recs.filter(r=>r.kind==='action');
-  const jevs = recs.filter(r=>r.kind==='jev');
-  const llms = recs.filter(r=>r.kind==='llm');
-  const lat = [...jevs,...llms];
-  const tin = llms.reduce((a,r)=>a+(r.in_tokens||0),0);
-  const tout = llms.reduce((a,r)=>a+(r.out_tokens||0),0);
-  document.getElementById('kActs').textContent = acts.length;
-  document.getElementById('kJev').textContent = jevs.length + llms.length;
-  document.getElementById('kLat').textContent = lat.length ?
-    (lat.reduce((a,r)=>a+(r.latency||0),0)/lat.length).toFixed(2)+'s' : '-';
-  document.getElementById('kTok').textContent = llms.length ? `${(tin/1000).toFixed(1)}K/${(tout/1000).toFixed(1)}K` : '≈'+(jevs.length*2)+'K/0';
+  if(!cur)return;
+  const recs=await (await fetch('/api/run/'+cur)).json();
+  const acts=recs.filter(r=>r.kind==='action');
+  const jevs=recs.filter(r=>r.kind==='jev');
+  const llms=recs.filter(r=>r.kind==='llm');
+  const lat=[...jevs,...llms];
+  const tin=llms.reduce((a,r)=>a+(r.in_tokens||0),0);
+  const tout=llms.reduce((a,r)=>a+(r.out_tokens||0),0);
+  document.getElementById('kActs').textContent=acts.length;
+  document.getElementById('kJev').textContent=jevs.length+llms.length;
+  document.getElementById('kLat').textContent=lat.length?
+    (lat.reduce((a,r)=>a+(r.latency||0),0)/lat.length).toFixed(2)+'秒':'-';
+  document.getElementById('kTok').textContent=llms.length?
+    `${(tin/1000).toFixed(1)}K/${(tout/1000).toFixed(1)}K`:'≈'+(jevs.length*2)+'K/0';
 
-  const show = recs.slice().reverse().filter(r=>r.kind!=='boot');
-  document.getElementById('stream').innerHTML = show.map(evHtml).join('')
-    || '<div class="empty">（该局无记录）</div>';
-  document.querySelectorAll('#stream .h').forEach(h=>
-    h.onclick = () => h.parentElement.classList.toggle('open'));
-  document.querySelectorAll('#stream .copy').forEach(c=>c.onclick=e=>{
-    e.stopPropagation(); navigator.clipboard.writeText(c.dataset.txt||'');
-    c.textContent='已复制'; setTimeout(()=>c.textContent='复制',1200);});
+  const box=document.getElementById('stream');
+  const stick=lastCount>=0 && nearBottom(box);   // 用户本就在底部→跟随
+  const openIdx=[...box.querySelectorAll('.ev.open')].map(e=>e.dataset.i);
+  box.innerHTML=recs.filter(r=>r.kind!=='boot').map((r,i)=>evHtml(r,i)).join('')
+    ||'<div class="empty">（该局无记录）</div>';
+  box.querySelectorAll('.ev').forEach(el=>{
+    if(openIdx.includes(el.dataset.i))el.classList.add('open');
+    el.querySelector('.h').onclick=()=>el.classList.toggle('open');
+    const c=el.querySelector('.copy');
+    if(c)c.onclick=e=>{e.stopPropagation();navigator.clipboard.writeText(c.dataset.txt||'');
+      c.textContent='已复制';setTimeout(()=>c.textContent='复制',1200);};
+  });
+  if(stick||lastCount<0)jumpBottom();
+  else if(recs.length!==lastCount)
+    document.getElementById('tobot').style.display='block';
+  lastCount=recs.length;
 }
 
-function evHtml(r){
-  let head='', body='';
-  if (r.kind==='action'){
-    const why = r.extra ? whyOf(r.extra) : '';
-    head = `<span class="t">${r.t}s</span><span class="tag action">ACTION</span>
-      <b style="font-family:var(--mono);font-size:12.5px">${r.method}</b>
-      <code style="color:#8b93a3;font-size:11px">${JSON.stringify(r.params).slice(0,60)}</code>
-      <span class="why">${why}</span>${r.error?`<span class="err">✗ ${esc(r.error).slice(0,70)}</span>`:''}`;
-    body = `<span class="copy" data-txt="${esc(JSON.stringify(r,null,1))}">复制</span><pre>${esc(JSON.stringify(r,null,1))}</pre>`;
-  } else if (r.kind==='jev'){
-    const n = Object.keys(r.questions||{}).length;
-    head = `<span class="t">${r.t}s</span><span class="tag jev">JEV</span>
-      <span class="sum"><b>${n}</b> 题 · <i>${r.latency}s</i></span>
+function evHtml(r,i){
+  let head='',body='';
+  if(r.kind==='action'){
+    const why=r.extra?whyOf(r.extra):'';
+    head=`<span class="t">${r.t}秒</span><span class="tag action">动作</span>
+      <b style="font-family:var(--mono);font-size:12.5px">${zhAct(r.method)}</b>
+      <code style="color:#9aa3b5;font-size:11px">${JSON.stringify(r.params).slice(0,54)}</code>
+      <span class="why">${why}</span>
+      ${r.error?`<span class="err">✗ ${esc(r.error).slice(0,66)}</span>`:''}`;
+    body=copyBtn(r)+`<pre>${esc(JSON.stringify(r,null,1))}</pre>`;
+  }else if(r.kind==='jev'){
+    const n=Object.keys(r.questions||{}).length;
+    head=`<span class="t">${r.t}秒</span><span class="tag jev">JEV 判断</span>
+      <span class="sum"><b>${n}</b> 题 · <i>${r.latency}秒</i></span>
       <span class="why">${archOf(r)}</span>`;
-    const qs = Object.entries(r.answers||{}).map(([k,a])=>`
+    const qs=Object.entries(r.answers||{}).map(([k,a])=>`
       <div class="q"><div class="k">${k}</div>
         <div class="v">${ansOf(a)}</div>
         ${a.confidence!=null?`<div class="bar"><i style="width:${Math.round(a.confidence*100)}%"></i></div>`:''}
-        <div class="p">${esc((r.questions||{})[k]||'').slice(0,80)}</div></div>`).join('');
-    body = `<span class="copy" data-txt="${esc(JSON.stringify(r,null,1))}">复制</span>
-      <div style="font-size:10.5px;color:#5c6575;margin:4px 0">STATE 原文</div>
+        <div class="p">${esc((r.questions||{})[k]||'').slice(0,76)}</div></div>`).join('');
+    body=copyBtn(r)+`<div class="lbl">发送给 Jev 的局面原文</div>
       <pre>${esc(r.state||'')}</pre>
-      <div style="font-size:10.5px;color:#5c6575;margin:8px 0 4px">回答</div>
-      <div class="qa">${qs}</div>`;
-  } else if (r.kind==='llm'){
-    head = `<span class="t">${r.t}s</span><span class="tag llm">LLM</span>
-      <span class="sum">${r.model||''} · <i>${r.latency}s</i> · ${r.in_tokens||0}in/${r.out_tokens||0}out</span>`;
-    body = `<span class="copy" data-txt="${esc((r.reply||'')+'')}">复制</span>
-      <div style="font-size:10.5px;color:#5c6575;margin:4px 0">PROMPT</div>
+      <div class="lbl">各题回答（含置信度）</div><div class="qa">${qs}</div>`;
+  }else if(r.kind==='llm'){
+    head=`<span class="t">${r.t}秒</span><span class="tag llm">LLM 判断</span>
+      <span class="sum">${r.model||''} · <i>${r.latency}秒</i> · ${r.in_tokens||0}入/${r.out_tokens||0}出</span>`;
+    body=copyBtn({reply:(r.reply||'')})+`<div class="lbl">请求原文</div>
       <pre>${esc((r.prompt||'').slice(0,1200))}</pre>
-      <div style="font-size:10.5px;color:#5c6575;margin:8px 0 4px">REPLY</div>
-      <pre>${esc(r.reply||'')}</pre>`;
-  } else if (r.kind==='jev_error'){
-    head = `<span class="t">${r.t}s</span><span class="tag jev_error">JEV失败</span>
-      <span class="err">${esc(r.error||'').slice(0,80)} → ${r.fallback||''}</span>`;
-    body = `<pre>${esc(JSON.stringify(r,null,1))}</pre>`;
-  } else if (r.kind==='result'){
-    head = `<span class="t">${r.t}s</span><span class="tag result">终局</span>
-      <span class="sum">${r.final&&r.final.won?'🏆 通关':'💀 失败'} · ante ${r.final?r.final.ante:'?'}
-       · ${r.actions}动作 · ${r.duration}s</span>`;
-    body = `<pre>${esc(JSON.stringify(r,null,1))}</pre>`;
-  } else {
-    head = `<span class="t">${r.t}s</span><span class="tag sys">${r.kind}</span>`;
-    body = `<pre>${esc(JSON.stringify(r,null,1))}</pre>`;
+      <div class="lbl">模型回复</div><pre>${esc(r.reply||'')}</pre>`;
+  }else if(r.kind==='jev_error'){
+    head=`<span class="t">${r.t}秒</span><span class="tag jev_error">JEV 失败</span>
+      <span class="err">${esc(r.error||'').slice(0,76)} → 已回退${r.fallback||''}</span>`;
+    body=`<pre>${esc(JSON.stringify(r,null,1))}</pre>`;
+  }else if(r.kind==='result'){
+    head=`<span class="t">${r.t}秒</span><span class="tag result">终局</span>
+      <span class="sum">${r.final&&r.final.won?'🏆 通关':'💀 失败'} · 止步底注轮 ${r.final?r.final.ante:'?'}
+       · ${r.actions}动作 · ${r.duration}秒</span>`;
+    body=`<pre>${esc(JSON.stringify(r,null,1))}</pre>`;
+  }else{
+    head=`<span class="t">${r.t}秒</span><span class="tag sys">${zhSys(r.kind)}</span>`;
+    body=`<pre>${esc(JSON.stringify(r,null,1))}</pre>`;
   }
-  return `<div class="ev"><div class="h">${head}</div><div class="d">${body}</div></div>`;
+  return `<div class="ev" data-i="${i}"><div class="h">${head}</div>
+    <div class="d">${body}</div></div>`;
 }
+function zhAct(m){return({play:'出牌',discard:'弃牌',buy:'购买',sell:'卖出',skip:'跳过',
+  select:'选盲',use:'使用',reroll:'重掷',pack:'开包',cash_out:'结算',
+  next_round:'进入下轮',start:'开局',menu:'回主菜单'})[m]||m}
+function zhSys(k){return({game_start:'开局',frozen:'冻结',llm_error:'LLM失败'})[k]||k}
 function ansOf(a){
-  if(!a) return '?';
-  if(a.type==='noul') return `noul = <b>${(+a.noul).toFixed(2)}</b>`;
-  if(a.type==='choice') return `→ <b>${a.choice}</b>`;
-  if(a.type==='score') return `score = <b>${(+a.score).toFixed(2)}</b>/4`;
+  if(!a)return'?';
+  if(a.type==='noul')return`概率 = <b>${(+a.noul).toFixed(2)}</b>`;
+  if(a.type==='choice')return`选择 → <b>${a.choice}</b>`;
+  if(a.type==='score')return`打分 = <b>${(+a.score).toFixed(2)}</b>/4`;
   return esc(JSON.stringify(a)).slice(0,60);
 }
-function archOf(r){
-  const a = r.answers && (r.answers.archetype);
-  return a && a.choice ? `方向: ${a.choice}` : '';
-}
+function archOf(r){const a=r.answers&&r.answers.archetype;
+  return a&&a.choice?`方向判定: ${a.choice}`:''}
 function whyOf(e){
-  if(e.why) return esc(e.why).slice(0,70);
-  if(e.solver) return `${e.solver.hand}=${e.solver.total.toFixed(0)}分`;
-  if(e.solver_fallback) return 'solver兜底';
-  return '';
+  if(e.why)return esc(e.why).slice(0,66);
+  if(e.solver)return `${e.solver.hand}=${e.solver.total.toFixed(0)}分`;
+  if(e.solver_fallback)return'求解器兜底';
+  return'';
 }
-function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;')}
+function copyBtn(o){return `<span class="copy" data-txt="${esc(JSON.stringify(o,null,1))}">复制</span>`}
 
-refreshRuns(); renderRun();
-setInterval(()=>{refreshRuns(); if(document.getElementById('follow').checked||!cur) renderRun();}, 2500);
-setInterval(refreshGame, 2000);
-setInterval(refreshShot, 4000);
-refreshGame(); refreshShot();
+document.getElementById('stream').addEventListener('scroll',e=>{
+  const el=e.target;
+  document.getElementById('tobot').style.display=nearBottom(el)?'none':'block';
+});
+
+refreshRuns();renderRun();
+setInterval(()=>{refreshRuns();
+  if(document.getElementById('follow').checked||!cur)renderRun();},2500);
+setInterval(()=>{refreshHint().then(refreshGame)},2000);
+setInterval(refreshShot,4000);
+refreshHint().then(refreshGame);refreshShot();
 </script>
 </body>
 </html>
@@ -423,8 +530,6 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(body)
         elif path == "/api/runs":
             self._json(load_runs())
-        elif path == "/api/run/":
-            self._json([])
         elif path.startswith("/api/run/"):
             name = path[len("/api/run/"):]
             if re.fullmatch(r"run_[\w\-\.]+\.jsonl", name):
@@ -434,6 +539,8 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/gamestate":
             gs, err = fetch_gamestate()
             self._json({"state": gs, "error": err} if err else {"state": gs})
+        elif path == "/api/hint":
+            self._json(fetch_hint())
         elif path == "/api/shot":
             self._json({"b64": fetch_shot()})
         else:
@@ -442,5 +549,5 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     LOG_DIR.mkdir(exist_ok=True)
-    print(f"Jevatro Agent Lab → http://127.0.0.1:{PORT}  (Ctrl+C 退出)")
+    print(f"Jevatro 决策观测台 → http://127.0.0.1:{PORT}  (Ctrl+C 退出)")
     ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
