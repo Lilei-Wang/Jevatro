@@ -15,26 +15,50 @@ from solver import best_play, best_discard
 MAX_ACTIONS = 4000
 
 
+def _sig(gs: dict) -> tuple:
+    return (gs.get("state"), gs.get("round", {}).get("chips"),
+            gs.get("round", {}).get("hands_left"), gs.get("money"),
+            (gs.get("jokers") or {}).get("count"),
+            len((gs.get("hand") or {}).get("cards", [])))
+
+
 def act(bot, log, before: dict, method: str, raise_on_error: bool = False, **params) -> dict:
     """执行动作并记录；默认失败时返回当前 gamestate 而不是崩掉。
 
-    "buttons not ready"（发牌动画竞态）自动等待重试。
+    - "buttons not ready"（发牌动画竞态）自动等待重试；
+    - 网络超时（响应丢失但动作可能已生效）：状态对比判断，变了就当作成功。
     """
-    for attempt in range(9):
+    for attempt in range(10):
         try:
             after = bot.call(method, **params)
             log.action(method, params, before, after)
             return after
         except BalatroError as e:
-            if "not ready" in str(e) and attempt < 8:
+            msg = str(e)
+            if "not ready" in msg and attempt < 9:
                 time.sleep(0.6)
                 continue
+            if "network" in msg:
+                time.sleep(3.0)
+                try:
+                    after = bot.gamestate()
+                except BalatroError:
+                    continue  # 服务器假死，等待下一轮重试
+                if _sig(after) != _sig(before):
+                    # 动作已生效但响应丢失
+                    log.action(method, params, before, after,
+                               error="network(响应丢失,已恢复)")
+                    return after
+                continue  # 状态没变 → 动作未生效，重试
             after = bot.gamestate()
-            log.action(method, params, before, after, error=str(e))
+            log.action(method, params, before, after, error=msg)
             if raise_on_error:
                 raise
             return after
-    return bot.gamestate()
+    # 多轮网络重试后仍无进展
+    after = bot.gamestate_retry()
+    log.action(method, params, before, after, error="network(重试耗尽)")
+    return after
 
 
 def shop_policy(gs: dict) -> list[tuple[str, dict]]:
