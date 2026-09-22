@@ -101,9 +101,19 @@ def run(seed: str | None = None, deck: str = "RED", stake: str = "WHITE") -> dic
     print(f"[start] seed={gs.get('seed')}")
 
     n = 0
+    stuck = 0
+    prev_sig = None
     while n < MAX_ACTIONS:
         n += 1
         state = gs.get("state")
+
+        cur_sig = _sig(gs)
+        stuck = stuck + 1 if cur_sig == prev_sig else 0
+        prev_sig = cur_sig
+        if stuck >= 8:
+            log.log("frozen", sig=cur_sig, actions=n)
+            print(f"[frozen] 状态连续 {stuck} 轮无进展，放弃本局")
+            break
 
         if state == "GAME_OVER":
             break
