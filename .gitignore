@@ -9,3 +9,4 @@ jevatro/.env
 # 运行日志（决策数据本地保留）
 jevatro/logs/*.jsonl
 jevatro/logs/*.txt
+jevatro/logs/_gif_frames/ 
