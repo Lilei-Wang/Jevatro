@@ -17,7 +17,7 @@ FONT_B = font_manager.FontProperties(fname=r"C:\Windows\Fonts\msyhbd.ttc")
 plt.rcParams["font.family"] = FONT.get_name()
 plt.rcParams["axes.unicode_minus"] = False
 
-OUT = Path(__file__).parent / "article_imgs"
+OUT = Path(__file__).parent.parent / "article_imgs"   # 项目根目录（文章引用处）
 OUT.mkdir(exist_ok=True)
 
 BG, CARD, LINE = "#0d0f12", "#161a20", "#2a303c"
@@ -53,7 +53,7 @@ for (cx, cy, col) in ((0.9, 2.0, RED), (1.6, 2.6, BLUE), (2.3, 2.0, "#fbbf24")):
     ax.add_patch(plt.Circle((cx, cy), 0.43, fill=False, ls=(0, (4, 3)), color="white", lw=1.6, alpha=0.7))
 ax.text(3.3, 2.55, "当「哑巴模型」Jev", fontsize=27, color="#e8ecf3", fontproperties=FONT_B)
 ax.text(3.3, 1.45, "学会了打小丑牌", fontsize=27, color=GREEN, fontproperties=FONT_B)
-ax.text(3.35, 0.55, "一局 3 厘钱 · 比传统大模型快 12 倍 · 全程实测", fontsize=13,
+ax.text(3.35, 0.55, "一局一分钱 · 比传统大模型便宜 18 倍 · 全程实测", fontsize=13,
         color=MUTED, fontproperties=FONT)
 ax.text(0.55, 0.25, "JEVATRO 项目实测报告", fontsize=10, color="#5f6878", fontproperties=FONT)
 save(fig, "01_封面.png")
@@ -90,15 +90,17 @@ axes[0].text(0.02, 0.9, "Jev 快 12 倍", transform=axes[0].transAxes,
              color=GREEN, fontsize=13, fontproperties=FONT_B)
 axes[0].grid(axis="y", color=LINE, alpha=0.5)
 
-cost = [0.0007 * 7.2, 0, 0.02]      # 折人民币/局
+cost = [0.0135, 0, 0.156]      # 实测人民币/局（COST9 全记账局 + 9 局回溯均值）
 b = axes[1].bar(names, [max(c, 0.0001) for c in cost],
                 color=[C_JEV, C_NAIVE, C_LLM], width=0.55)
 axes[1].set_yscale("log")
-style_ax(axes[1], "单局决策成本（人民币，对数轴）")
-labels = ["¥0.005(3厘)", "¥0(免费档)", "¥0.02"]
+style_ax(axes[1], "单局决策成本（人民币，对数轴，实测）")
+labels = ["¥0.014(实测)", "¥0(免费档)", "¥0.156(实测)"]
 for bb, v, lb in zip(b, cost, labels):
     axes[1].text(bb.get_x() + bb.get_width() / 2, max(v, 0.0001) * 1.3, lb,
                  ha="center", color="#e8ecf3", fontsize=11, fontproperties=FONT_B)
+axes[1].text(0.02, 0.88, "Jev 便宜 18 倍（官方价核账）", transform=axes[1].transAxes,
+             color=GREEN, fontsize=12, fontproperties=FONT_B)
 axes[1].grid(axis="y", color=LINE, alpha=0.5)
 fig.suptitle("经济性：高频决策位的碾压优势", fontsize=15,
              color="#e8ecf3", fontproperties=FONT_B, y=1.04)
@@ -245,5 +247,61 @@ for i, (x, t, d, col) in enumerate(ms):
 ax.text(0.6, 4.6, "8 轮迭代 · 130+ 局实测 · 17 个提交", fontsize=15,
         color="#e8ecf3", fontproperties=FONT_B)
 save(fig, "08_时间线.png")
+
+# ============ 12 题型与原理（传统LLM vs Jev） ============
+fig, ax = plt.subplots(figsize=(11, 5.4))
+ax.set_xlim(0, 11); ax.set_ylim(0, 5.6); ax.axis("off"); ax.set_facecolor(CARD)
+
+def rbox(x, y, w, h, text, fc, ec, tc, fs=10.5, bold=False):
+    ax.add_patch(FancyBboxPatch((x, y), w, h, boxstyle="round,pad=0.08",
+                                fc=fc, ec=ec, lw=1.4))
+    ax.text(x + w / 2, y + h / 2, text, ha="center", va="center",
+            color=tc, fontsize=fs, fontproperties=FONT_B if bold else FONT)
+
+# —— 上半：传统 LLM 链路 ——
+rbox(0.25, 4.45, 1.9, 0.8, "状态文本\n+ 指令", BG, LINE, MUTED, 10)
+rbox(2.55, 4.45, 2.7, 0.8, "自回归生成\n逐 token 吐文本", "#1c1418", "#7f2d3a", "#f0b9c0", 10.5)
+rbox(5.65, 4.45, 2.0, 0.8, "JSON 容错解析\n正则+重试", "#1c1418", "#7f2d3a", "#f0b9c0", 10)
+rbox(8.0, 4.45, 2.7, 0.8, "结构化决策\n~30% 解析失败回退", "#241418", "#a13040", RED, 10)
+for x0, x1 in ((2.15, 2.55), (5.25, 5.65), (7.65, 8.0)):
+    ax.add_patch(FancyArrowPatch((x0, 4.85), (x1, 4.85), arrowstyle="-|>",
+                                 mutation_scale=14, color=MUTED, lw=1.3))
+ax.text(0.25, 5.35, "传统 LLM：把判断题当作文题", fontsize=12.5, color="#f0b9c0",
+        fontproperties=FONT_B)
+
+# —— 下半：Jev 链路 ——
+rbox(0.25, 2.6, 1.9, 0.8, "状态文本\n+ 题目字典", BG, LINE, MUTED, 10)
+rbox(2.55, 2.6, 2.7, 0.8, "非自回归单次前向\n无文本生成过程", "#0f1e18", "#1f6b4a", "#a9e8c8", 10.5)
+rbox(5.65, 2.6, 2.0, 0.8, "类型化输出\nchoice / score / noul", "#0f1e18", "#1f6b4a", "#a9e8c8", 10)
+rbox(8.0, 2.6, 2.7, 0.8, "代码直接分支\n0 解析失败", "#0f2418", "#2f9e63", GREEN, 10)
+for x0, x1 in ((2.15, 2.55), (5.25, 5.65), (7.65, 8.0)):
+    ax.add_patch(FancyArrowPatch((x0, 3.0), (x1, 3.0), arrowstyle="-|>",
+                                 mutation_scale=14, color=MUTED, lw=1.3))
+ax.text(0.25, 3.5, "Jev (System One)：把判断题当判断题", fontsize=12.5, color="#a9e8c8",
+        fontproperties=FONT_B)
+
+# —— 三种题型卡 ——
+cards = [
+    ("Choice 选择题", "候选中选一个\n附概率分布与置信度", 'choice="a"\nconfidence=0.63\nprobabilities={a:0.63,...}'),
+    ("Score 打分题", "按等级量表 0-4 打分\n附置信度", 'score=2\nconfidence=0.71'),
+    ("Noul 判断题", "是非概率 0-1\n附置信度", 'noul=0.51\nconfidence=0.55'),
+]
+for i, (t, d, code) in enumerate(cards):
+    x = 0.35 + i * 3.6
+    ax.add_patch(FancyBboxPatch((x, 0.25), 3.3, 1.9, boxstyle="round,pad=0.1",
+                                fc="#11151b", ec=LINE, lw=1.4))
+    ax.text(x + 1.65, 1.85, t, fontsize=12, color="#e8ecf3", fontproperties=FONT_B,
+            ha="center")
+    ax.text(x + 1.65, 1.28, d, fontsize=9.5, color=MUTED, fontproperties=FONT,
+            ha="center", va="center")
+    ax.add_patch(FancyBboxPatch((x + 0.25, 0.42), 2.8, 0.62, boxstyle="round,pad=0.06",
+                                fc="#0b0e12", ec="#233043", lw=1))
+    ax.text(x + 1.65, 0.73, code, fontsize=8.2, color="#8fd6b4", ha="center",
+            va="center", fontfamily="monospace", linespacing=1.25)
+ax.text(10.75, 3.0, "响应 JSON 里的真实字段", fontsize=9, color="#5f6878",
+        fontproperties=FONT, rotation=90, va="center")
+fig.suptitle("Jev 原理：不生成文本，直接输出类型化判断（输出免费、构造性无幻觉）",
+             fontsize=14.5, color="#e8ecf3", fontproperties=FONT_B, y=0.99)
+save(fig, "12_题型与原理.png")
 
 print("ALL CHARTS DONE")
