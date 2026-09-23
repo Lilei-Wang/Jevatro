@@ -244,7 +244,7 @@ for i, (x, t, d, col) in enumerate(ms):
             ha="center", va="bottom" if up else "top")
     ax.text(x, ty + (0.62 if up else -0.62), d, fontsize=9.5, color=MUTED,
             fontproperties=FONT, ha="center", va="bottom" if up else "top")
-ax.text(0.6, 4.6, "8 轮迭代 · 130+ 局实测 · 17 个提交", fontsize=15,
+ax.text(0.6, 4.6, "10 轮迭代 · 130+ 局实测 · 20+ 个提交", fontsize=15,
         color="#e8ecf3", fontproperties=FONT_B)
 save(fig, "08_时间线.png")
 
