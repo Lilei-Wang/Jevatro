@@ -10,3 +10,4 @@ jevatro/.env
 jevatro/logs/*.jsonl
 jevatro/logs/*.txt
 jevatro/logs/_gif_frames/ 
+_opencut/
