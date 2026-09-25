@@ -486,6 +486,27 @@ const ZH_VAL={play:'出牌',discard:'弃牌',buy:'购买',sell:'卖出',skip:'�
   menu:'回主菜单',action:'动作',jev:'Jev判断',llm:'LLM判断',result:'终局',
   game_start:'开局',frozen:'冻结',jev_error:'Jev失败',llm_error:'LLM失败',boot:'启动',
   true:'是',false:'否'};
+// 决策明细中文化：题目键名 + 选项标签
+const ZH_OPT={pair:'对子',flush:'同花',straight:'顺子',highcard:'高牌',balanced:'均衡',
+  synergy:'协同',scaling:'成长',economy:'经济',immediate:'战力'};
+const ZH_QNAME={archetype:'构筑方向',skip:'跳盲判断',skip_better:'跳盲判断',
+  sell_which:'卖牌选择',pick:'开包选择',reroll_worth:'重掷判断',buy:'购买判断'};
+function zhQuestion(k){
+  if(ZH_QNAME[k])return ZH_QNAME[k];
+  const m=String(k).match(/^(item|voucher|j|p)(\d+)(?:__(\w+))?$/);
+  if(m){
+    const base={item:'商品',voucher:'兑换券',j:'小丑',p:'卡'}[m[1]];
+    const dim=m[3]?`·${ZH_OPT[m[3]]||m[3]}`:'';
+    return `${base}${+m[2]+1}${dim}`;
+  }
+  return k;
+}
+function zhOption(k){
+  if(ZH_OPT[k])return ZH_OPT[k];
+  const m=String(k).match(/^(item|voucher|j|p)(\d+)$/);
+  if(m){const base={item:'商品',voucher:'兑换券',j:'小丑',p:'卡'}[m[1]];return `${base}${+m[2]+1}`;}
+  return k;
+}
 function zhJson(v,ind){
   const pad='  '.repeat(ind);
   if(v===null||v===undefined)return '无';
@@ -567,7 +588,7 @@ function renderJevDecisions(recs, isLLM){
         <td>已回退${esc(d.fb).slice(0,16)}</td></tr>`:
       `<tr class="${idx===0?'newest':''}">
         <td class="tt">${d.t}秒${idx===0?'<span class="badge-new">最新</span>':''}</td>
-        <td title="${esc(String(d.q))}"><span class="qk">${esc(d.k)}</span><span class="qi">${esc(String(d.q))}</span></td>
+        <td title="${esc(String(d.q))}"><span class="qk">${esc(zhQuestion(d.k))}</span><span class="qi">${esc(String(d.q))}</span></td>
         <td class="dv" title="${esc(ansText(d.a))}">${ansOf(d.a)}${distHtml(d.a)}</td>
         <td>${d.c!=null?`<div class="cbar"><div class="bar"><i style="width:${Math.round(d.c*100)}%;
           background:${d.c>=0.6?'#34d399':d.c>=0.35?'#fbbf24':'#f87171'}"></i></div><b>${(+d.c).toFixed(2)}</b></div>`
@@ -620,7 +641,7 @@ function renderLLMDecisions(recs){
       try{
         const j=JSON.parse((r.reply||'').match(/\{.*\}/s)?.[0]||'null');
         if(j){
-          if(Array.isArray(j.buys))decision=j.buys.length?'购买 '+j.buys.join('+'):'不买';
+          if(Array.isArray(j.buys))decision=j.buys.length?'购买 '+j.buys.map(zhOption).join('+'):'不买';
           else if('skip' in j)decision=j.skip?'跳过盲注':'挑战盲注';
           reason=j.reason||'';
         }else{decision='原始输出';reason=(r.reply||'').slice(0,60);}
@@ -659,7 +680,7 @@ function renderLLMDecisions(recs){
 function ansText(a){
   if(!a)return'';
   if(a.type==='noul')return`概率 ${(+a.noul).toFixed(2)} · 置信度 ${a.confidence!=null?(+a.confidence).toFixed(2):'无'}`;
-  if(a.type==='choice')return`选择 ${a.choice} · 置信度 ${a.confidence!=null?(+a.confidence).toFixed(2):'无'}`;
+  if(a.type==='choice')return`选择 ${zhOption(a.choice)} · 置信度 ${a.confidence!=null?(+a.confidence).toFixed(2):'无'}`;
   if(a.type==='score')return`打分 ${(+a.score).toFixed(2)}/4 · 置信度 ${a.confidence!=null?(+a.confidence).toFixed(2):'无'}`;
   return JSON.stringify(a).slice(0,60);
 }
@@ -673,7 +694,7 @@ function distHtml(a){
     .sort((x,y)=>y[1]-x[1]).slice(0,6)
     .map(([k,v])=>`
       <div class="dist ${k===chosen?'chosen':''}">
-        <span>${esc(String(k))}</span>
+        <span>${esc(zhOption(k))}</span>
         <div class="dbar"><i style="width:${Math.min(100,Math.round(v*100))}%"></i></div>
         <b>${Math.round(v*100)}%</b>
       </div>`).join('');
@@ -753,7 +774,7 @@ function zhSys(k){return({game_start:'开局',frozen:'冻结',llm_error:'LLM失�
 function ansOf(a){
   if(!a)return'?';
   if(a.type==='noul')return`概率 = <b>${(+a.noul).toFixed(2)}</b>`;
-  if(a.type==='choice')return`选择 → <b>${a.choice}</b>`;
+  if(a.type==='choice')return`选择 → <b>${zhOption(a.choice)}</b>`;
   if(a.type==='score')return`打分 = <b>${(+a.score).toFixed(2)}</b>/4`;
   return esc(JSON.stringify(a)).slice(0,60);
 }
