@@ -315,6 +315,9 @@ PAGE = r"""<!DOCTYPE html>
   .cmp td{padding:8px 14px;border-bottom:1px solid #262d3a;color:#c6cede}
   .cmp td.win{color:#34d399;font-weight:700}
   .cmp td .sub{display:block;font-size:10.5px;color:#5f6878;font-weight:400}
+  .mbadge{padding:3px 10px;border-radius:10px;font-size:12px;font-weight:700}
+  .mbadge.jev{background:rgba(248,113,113,.15);color:#f87171;border:1px solid #4a2a30}
+  .mbadge.llm{background:rgba(96,165,250,.15);color:#60a5fa;border:1px solid #2a3a5a}
   .mcrow{display:inline-flex;gap:4px;vertical-align:middle}
   .mc{display:inline-flex;align-items:center;justify-content:center;min-width:30px;height:24px;
       padding:0 4px;border:1px solid #2a303c;border-radius:4px;background:#10141a;
@@ -368,6 +371,7 @@ PAGE = r"""<!DOCTYPE html>
   <div class="logo"><span class="chip">🃏</span>
     <div>JEVATRO<div class="lab">决策观测台</div></div></div>
   <div class="dots">
+    <span class="mbadge" id="modeBadge">Jev 大脑</span>
     <span class="dot" id="dRun"><i></i>对局</span>
     <select id="runSel" onchange="selRun(this.value)"></select>
     <label><input type="checkbox" id="follow" checked>跟随最新</label>
@@ -398,12 +402,12 @@ PAGE = r"""<!DOCTYPE html>
   <!-- Jev 决策明细（逐题 + 置信度） -->
   <div>
     <div class="panel">
-      <div class="ptitle"><span class="no">03</span><b>Jev 决策明细</b>
+      <div class="ptitle"><span class="no">03</span><b id="decTitle">Jev 决策明细</b>
         <span class="live" id="jStat">逐题置信度</span></div>
       <div class="jstat" id="jStatBar"></div>
       <div class="jevbox">
         <table class="jevt" id="jevTable">
-          <thead><tr><th style="width:64px">时间</th><th>题目</th>
+          <thead><tr id="decCols"><th style="width:64px">时间</th><th>题目</th>
             <th style="width:180px">决策</th><th style="width:160px">置信度</th></tr></thead>
           <tbody id="jevRows"><tr><td colspan="4" class="jempty">暂无 Jev 决策</td></tr></tbody>
         </table>
@@ -488,6 +492,14 @@ function jumpBottom(){const el=document.getElementById('stream');
 async function renderRun(){
   if(!cur)return;
   const recs=await (await fetch('/api/run/'+cur)).json();
+  const isLLM=/_llm_/.test(cur);
+  const mb=document.getElementById('modeBadge');
+  mb.textContent=isLLM?'DeepSeek-LLM 大脑':'Jev 大脑';
+  mb.className='mbadge '+(isLLM?'llm':'jev');
+  document.getElementById('decTitle').textContent=isLLM?'LLM 决策明细':'Jev 决策明细';
+  document.getElementById('decCols').innerHTML=isLLM?
+    '<th style="width:64px">时间</th><th>决策</th><th>理由</th><th style="width:150px">延迟/令牌</th>':
+    '<th style="width:64px">时间</th><th>题目</th><th style="width:180px">决策</th><th style="width:160px">置信度</th>';
   const acts=recs.filter(r=>r.kind==='action');
   const jevs=recs.filter(r=>r.kind==='jev');
   const llms=recs.filter(r=>r.kind==='llm');
@@ -517,11 +529,12 @@ async function renderRun(){
   else if(recs.length!==lastCount)
     document.getElementById('tobot').style.display='block';
   lastCount=recs.length;
-  renderJevDecisions(recs);
+  renderJevDecisions(recs, isLLM);
 }
 
-// —— Jev 决策明细：逐题一行（时间/题目/决策/置信度），最新在最上 ——
-function renderJevDecisions(recs){
+// —— 决策明细：Jev 局逐题+置信度 / LLM 局逐次决策+理由，最新在最上 ——
+function renderJevDecisions(recs, isLLM){
+  if(isLLM){renderLLMDecisions(recs);return;}
   const rows=[];
   let confSum=0,confN=0,hiN=0;
   for(const r of recs){
@@ -584,6 +597,54 @@ async function renderCompare(){
     }).join('');
   }catch(e){}
 }
+// —— LLM 决策明细：每次调用一行（时间/决策/理由/延迟与令牌） ——
+function renderLLMDecisions(recs){
+  const rows=[];
+  let latSum=0,tin=0,tout=0,fails=0;
+  for(const r of recs){
+    if(r.kind==='llm'){
+      latSum+=r.latency||0;
+      tin+=r.in_tokens||0;tout+=r.out_tokens||0;
+      let decision='—',reason='';
+      try{
+        const j=JSON.parse((r.reply||'').match(/\{.*\}/s)?.[0]||'null');
+        if(j){
+          if(Array.isArray(j.buys))decision=j.buys.length?'购买 '+j.buys.join('+'):'不买';
+          else if('skip' in j)decision=j.skip?'跳过盲注':'挑战盲注';
+          reason=j.reason||'';
+        }else{decision='原始输出';reason=(r.reply||'').slice(0,60);}
+      }catch(e){decision='解析失败';reason=(r.reply||'').slice(0,60);}
+      rows.push({t:r.t,decision,reason,lat:r.latency,tok:`${r.in_tokens||0}/${r.out_tokens||0}`});
+    }else if(r.kind==='llm_error'){
+      fails++;rows.push({t:r.t,err:r.error||'调用失败'});
+    }
+  }
+  // naive_fallback 回退购买也计入失败
+  for(const r of recs){
+    if(r.kind==='action'){
+      const ex=r.extra||(r.params||{}).extra||{};
+      if(String((ex||{}).why||'').includes('naive_fallback'))fails++;
+    }
+  }
+  const tb=document.getElementById('jevRows');
+  if(!rows.length){tb.innerHTML='<tr><td colspan="4" class="jempty">暂无 LLM 决策</td></tr>';}
+  else{
+    tb.innerHTML=rows.slice(-120).reverse().map((d,idx)=>d.err?
+      `<tr class="jerr"><td class="tt">${d.t}秒</td><td colspan="2">✗ ${esc(d.err).slice(0,70)}</td><td>已回退</td></tr>`:
+      `<tr class="${idx===0?'newest':''}">
+        <td class="tt">${d.t}秒${idx===0?'<span class="badge-new">最新</span>':''}</td>
+        <td class="dv" style="color:#60a5fa;font-weight:600">${esc(d.decision)}</td>
+        <td class="qi" title="${esc(d.reason)}">${esc(d.reason)}</td>
+        <td class="tt">${(d.lat||0).toFixed(1)}秒<span class="qi">${d.tok} tok</span></td></tr>`).join('');
+  }
+  document.getElementById('jStat').textContent=rows.length?`平均延迟 ${(latSum/Math.max(rows.length,1)).toFixed(1)}秒`:'LLM 决策';
+  document.getElementById('jStatBar').innerHTML=rows.length?
+    `<div class="kv"><b>${rows.length}</b><span>LLM 调用</span></div>
+     <div class="kv"><b style="color:#60a5fa">${(latSum/rows.length).toFixed(1)}秒</b><span>平均延迟</span></div>
+     <div class="kv"><b>${(tin/1000).toFixed(1)}K/${(tout/1000).toFixed(1)}K</b><span>令牌(入/出)</span></div>
+     <div class="kv"><b>${fails}</b><span>失败/回退</span></div>`:'';
+}
+
 function ansText(a){
   if(!a)return'';
   if(a.type==='noul')return`概率 ${(+a.noul).toFixed(2)} · 置信度 ${a.confidence!=null?(+a.confidence).toFixed(2):'无'}`;

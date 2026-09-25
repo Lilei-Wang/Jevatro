@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """录制接力守护：连续开新局供录制，游戏进程崩溃时自动重启恢复。
 
-用法: python demo_relay.py [起始编号] [总局数]    # 默认 19 起，最多 60 局
-依赖: dashboard.py 独立运行中（面板自动"跟随最新"）。
+用法: python demo_relay.py [起始编号] [总局数] [模式]
+模式: jev（默认，只用 Jev 大脑）| llm（只用 DeepSeek 大脑）| mix（两种大脑轮流，界面对比）
+依赖: dashboard.py 独立运行中（面板自动"跟随最新"，两种大脑的决策流都能展示）。
 """
 from __future__ import annotations
 
@@ -13,10 +14,12 @@ import time
 from pathlib import Path
 
 import jev_bot
+import llm_bot
 from client import BalatroClient
 
 HERE = Path(__file__).parent
 GAME_EXE = r"D:\software\Steam\steamapps\common\Balatro\Balatro.exe"
+BOTS = {"jev": jev_bot, "llm": llm_bot}
 
 
 def game_alive() -> bool:
@@ -45,22 +48,24 @@ def ensure_game() -> bool:
     return ok
 
 
-def main(start: int = 19, total: int = 60):
+def main(start: int = 19, total: int = 60, mode: str = "jev"):
     for i in range(start, start + total):
         if not ensure_game():
             print("[relay] 游戏重启失败，终止接力", flush=True)
             return
-        print(f"\n===== DEMOV{i} =====", flush=True)
+        cfg = mode if mode != "mix" else ("jev" if i % 2 == 0 else "llm")
+        print(f"\n===== DEMOV{i} · {cfg.upper()} =====", flush=True)
         try:
-            gs = jev_bot.run(seed=f"DEMOV{i}")
-            print(f"[relay] DEMOV{i}: won={gs.get('won')} ante={gs.get('ante_num')}",
+            gs = BOTS[cfg].run(seed=f"DEMOV{i}")
+            print(f"[relay] DEMOV{i}({cfg}): won={gs.get('won')} ante={gs.get('ante_num')}",
                   flush=True)
         except (Exception, SystemExit) as e:
-            print(f"[relay] DEMOV{i} 异常: {type(e).__name__}: {e}", flush=True)
+            print(f"[relay] DEMOV{i}({cfg}) 异常: {type(e).__name__}: {e}", flush=True)
         time.sleep(2)
     print("[relay] 接力完成", flush=True)
 
 
 if __name__ == "__main__":
     main(int(sys.argv[1]) if len(sys.argv) > 1 else 19,
-         int(sys.argv[2]) if len(sys.argv) > 2 else 60)
+         int(sys.argv[2]) if len(sys.argv) > 2 else 60,
+         sys.argv[3] if len(sys.argv) > 3 else "jev")
