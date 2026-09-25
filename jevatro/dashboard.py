@@ -198,6 +198,24 @@ PAGE = r"""<!DOCTYPE html>
              overflow-y:auto;padding-right:6px;scroll-behavior:smooth}
   .streambox::-webkit-scrollbar{width:8px}
   .streambox::-webkit-scrollbar-thumb{background:#2a303c;border-radius:4px}
+  .jevbox{max-height:40vh;overflow-y:auto}
+  .jevbox::-webkit-scrollbar{width:8px}
+  .jevbox::-webkit-scrollbar-thumb{background:#2a303c;border-radius:4px}
+  .jevt{width:100%;border-collapse:collapse;font-size:12.5px}
+  .jevt th{position:sticky;top:0;background:#161a20;color:#9aa3b5;font-weight:500;
+           text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);z-index:1}
+  .jevt td{padding:6px 10px;border-bottom:1px solid #1c222c;vertical-align:top}
+  .jevt tr:first-child td{background:rgba(248,113,113,.07)}
+  .jevt .tt{color:#5f6878;font-family:var(--mono);font-size:11.5px;white-space:nowrap}
+  .jevt .qk{color:#fbbf24;font-family:var(--mono);font-size:11px;display:block}
+  .jevt .qi{color:#9aa3b5;font-size:11.5px}
+  .jevt .dv{font-size:12.5px}
+  .jevt .cbar{display:flex;align-items:center;gap:8px}
+  .jevt .cbar .bar{flex:1;height:6px;border-radius:3px;background:#232935;overflow:hidden}
+  .jevt .cbar .bar i{display:block;height:100%;border-radius:3px}
+  .jevt .cbar b{font-family:var(--mono);font-size:11.5px;min-width:34px;text-align:right}
+  .jevt .jerr td{color:#f87171}
+  .jempty{color:#5f6878;text-align:center;padding:18px}
   .tobot{position:sticky;bottom:6px;align-self:flex-end;background:var(--green);
          color:#06281c;border:none;border-radius:999px;padding:6px 14px;
          font-size:12px;font-weight:700;cursor:pointer;display:none;z-index:5}
@@ -268,6 +286,21 @@ PAGE = r"""<!DOCTYPE html>
           <div class="empty">读取决策记录…</div>
         </div>
         <button class="tobot" id="tobot" onclick="jumpBottom()">↓ 最新</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Jev 决策明细（逐题 + 置信度） -->
+  <div>
+    <div class="panel">
+      <div class="ptitle"><span class="no">03</span><b>Jev 决策明细</b>
+        <span class="live" id="jStat">逐题置信度</span></div>
+      <div class="jevbox">
+        <table class="jevt" id="jevTable">
+          <thead><tr><th style="width:64px">时间</th><th>题目</th>
+            <th style="width:170px">决策</th><th style="width:150px">置信度</th></tr></thead>
+          <tbody id="jevRows"><tr><td colspan="4" class="jempty">暂无 Jev 决策</td></tr></tbody>
+        </table>
       </div>
     </div>
   </div>
@@ -364,6 +397,38 @@ async function renderRun(){
   else if(recs.length!==lastCount)
     document.getElementById('tobot').style.display='block';
   lastCount=recs.length;
+  renderJevDecisions(recs);
+}
+
+// —— Jev 决策明细：逐题一行（时间/题目/决策/置信度），最新在最上 ——
+function renderJevDecisions(recs){
+  const rows=[];
+  let confSum=0,confN=0;
+  for(const r of recs){
+    if(r.kind==='jev'){
+      for(const [k,a] of Object.entries(r.answers||{})){
+        const c=a&&a.confidence;
+        if(c!=null){confSum+=c;confN++;}
+        rows.push({t:r.t,k,q:(r.questions||{})[k]||'',a,c,lat:r.latency});
+      }
+    }else if(r.kind==='jev_error'){
+      rows.push({t:r.t,err:r.error||'调用失败',fb:r.fallback||''});
+    }
+  }
+  const tb=document.getElementById('jevRows');
+  if(!rows.length){tb.innerHTML='<tr><td colspan="4" class="jempty">暂无 Jev 决策</td></tr>';}
+  else{
+    tb.innerHTML=rows.slice(-120).reverse().map(d=>d.err?
+      `<tr class="jerr"><td class="tt">${d.t}秒</td><td colspan="2">✗ ${esc(d.err).slice(0,70)}</td>
+        <td>已回退${esc(d.fb).slice(0,16)}</td></tr>`:
+      `<tr><td class="tt">${d.t}秒</td>
+        <td><span class="qk">${esc(d.k)}</span><span class="qi">${esc(String(d.q).slice(0,60))}</span></td>
+        <td class="dv">${ansOf(d.a)}</td>
+        <td>${d.c!=null?`<div class="cbar"><div class="bar"><i style="width:${Math.round(d.c*100)}%;
+          background:${d.c>=0.6?'#34d399':d.c>=0.35?'#fbbf24':'#f87171'}"></i></div><b>${(+d.c).toFixed(2)}</b></div>`:'—'}</td></tr>`).join('');
+  }
+  document.getElementById('jStat').textContent=confN?
+    `共 ${confN} 题 · 平均置信度 ${(confSum/confN).toFixed(2)}`:'逐题置信度';
 }
 
 function evHtml(r,i){
