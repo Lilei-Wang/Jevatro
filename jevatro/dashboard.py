@@ -304,8 +304,9 @@ PAGE = r"""<!DOCTYPE html>
   .jevt .dv{font-size:12.5px}
   .distwrap{margin-top:4px;display:flex;flex-direction:column;gap:2px}
   .dist{display:flex;align-items:center;gap:6px;font-size:10.5px;line-height:1.3}
-  .dist span{width:58px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-             color:#9aa3b5;font-family:var(--mono);font-size:10px}
+  .dist span{width:104px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+             color:#9aa3b5;font-size:10px}
+  .dist.chosen span{color:#34d399}
   .dist .dbar{flex:1;height:5px;border-radius:3px;background:#232935;overflow:hidden}
   .dist .dbar i{display:block;height:100%;background:#4a5568;border-radius:3px}
   .dist b{min-width:30px;text-align:right;color:#7a8496;font-weight:400;
@@ -589,7 +590,7 @@ function renderJevDecisions(recs, isLLM){
       `<tr class="${idx===0?'newest':''}">
         <td class="tt">${d.t}秒${idx===0?'<span class="badge-new">最新</span>':''}</td>
         <td title="${esc(String(d.q))}"><span class="qk">${esc(zhQuestion(d.k))}</span><span class="qi">${esc(String(d.q))}</span></td>
-        <td class="dv" title="${esc(ansText(d.a))}">${ansOf(d.a)}${distHtml(d.a)}</td>
+        <td class="dv" title="${esc(ansText(d.a))}">${ansOf(d.a,dimOf(d.k))}${distHtml(d.a,dimOf(d.k))}</td>
         <td>${d.c!=null?`<div class="cbar"><div class="bar"><i style="width:${Math.round(d.c*100)}%;
           background:${d.c>=0.6?'#34d399':d.c>=0.35?'#fbbf24':'#f87171'}"></i></div><b>${(+d.c).toFixed(2)}</b></div>`
           :'<span style="color:#5f6878">无信号</span>'}</td></tr>`).join('');
@@ -684,20 +685,33 @@ function ansText(a){
   if(a.type==='score')return`打分 ${(+a.score).toFixed(2)}/4 · 置信度 ${a.confidence!=null?(+a.confidence).toFixed(2):'无'}`;
   return JSON.stringify(a).slice(0,60);
 }
+// 打分量表（与后端 RUBRIC 一致）：维度 → 各档含义
+const RUBRIC_ZH={
+  synergy:['与现有构筑零交互甚至冲突','略相关但方向不符','中性填充','明确加强现有方向','核心拼图,改变战力曲线'],
+  scaling:['无成长','一次性收益','轻微成长','每轮稳定成长','复利式成长'],
+  economy:['纯花钱无回报','略亏','回本','产出大于成本','直接利息引擎'],
+  immediate:['对得分完全无助','略有帮助','有一定帮助','显著提升近期得分','立刻改变能否过关']};
+function dimOf(k){const m=String(k).match(/__(\w+)$/);return m?m[1]:null;}
+function scoreLabel(dim,val){
+  const rub=RUBRIC_ZH[dim];
+  return rub?rub[Math.max(0,Math.min(4,Math.round(val)))]:null;
+}
 // 全选项概率分布：a.probabilities = {选项: 概率}，选中/接近打分值的绿色高亮
-function distHtml(a){
+function distHtml(a,dim){
   const p=a&&a.probabilities;
   if(!p||typeof p!=='object')return'';
   const chosen=a.type==='choice'?a.choice:
     (a.type==='score'?''+Math.round(a.score):null);
   const rows=Object.entries(p)
     .sort((x,y)=>y[1]-x[1]).slice(0,6)
-    .map(([k,v])=>`
+    .map(([k,v])=>{
+      const lab=(a.type==='score'&&RUBRIC_ZH[dim])?` ${RUBRIC_ZH[dim][+k]||''}`:'';
+      return `
       <div class="dist ${k===chosen?'chosen':''}">
-        <span>${esc(zhOption(k))}</span>
+        <span title="${esc(zhOption(k)+lab)}">${esc(zhOption(k)+lab)}</span>
         <div class="dbar"><i style="width:${Math.min(100,Math.round(v*100))}%"></i></div>
         <b>${Math.round(v*100)}%</b>
-      </div>`).join('');
+      </div>`;}).join('');
   return `<div class="distwrap">${rows}</div>`;
 }
 
@@ -775,7 +789,10 @@ function ansOf(a){
   if(!a)return'?';
   if(a.type==='noul')return`概率 = <b>${(+a.noul).toFixed(2)}</b>`;
   if(a.type==='choice')return`选择 → <b>${zhOption(a.choice)}</b>`;
-  if(a.type==='score')return`打分 = <b>${(+a.score).toFixed(2)}</b>/4`;
+  if(a.type==='score'){
+    const lab=dim?scoreLabel(dim,a.score):null;
+    return`打分 = <b>${(+a.score).toFixed(2)}</b>/4${lab?`（${lab}）`:''}`;
+  }
   return esc(JSON.stringify(a)).slice(0,60);
 }
 function archOf(r){const a=r.answers&&r.answers.archetype;
