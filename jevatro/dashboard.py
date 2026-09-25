@@ -237,9 +237,10 @@ PAGE = r"""<!DOCTYPE html>
   select{background:var(--card2);color:var(--txt);border:1px solid var(--line);
     border-radius:7px;padding:5px 9px;font-size:12px;max-width:280px}
   label{font-size:12px;color:var(--muted);display:flex;gap:5px;align-items:center}
-  .wrap{display:grid;grid-template-columns:1fr;gap:16px;
-        padding:16px 22px;max-width:1600px;margin:0 auto}
-  @media(max-width:980px){.wrap{grid-template-columns:1fr}}
+  .wrap{display:grid;grid-template-columns:1fr 1fr;gap:16px;
+        padding:16px 22px;max-width:1720px;margin:0 auto;align-items:start}
+  .wrap>div:last-child{grid-column:1/-1}
+  @media(max-width:1400px){.wrap{grid-template-columns:1fr}}
   .panel{background:var(--card);border:1px solid var(--line);border-radius:13px;
          padding:16px 18px;margin-bottom:16px}
   .ptitle{font-size:12px;color:var(--muted);margin-bottom:12px;
@@ -279,7 +280,7 @@ PAGE = r"""<!DOCTYPE html>
              overflow-y:auto;padding-right:6px;scroll-behavior:smooth}
   .streambox::-webkit-scrollbar{width:8px}
   .streambox::-webkit-scrollbar-thumb{background:#2a303c;border-radius:4px}
-  .jevbox{max-height:40vh;overflow-y:auto}
+  .jevbox{max-height:74vh;overflow-y:auto}
   .jevbox::-webkit-scrollbar{width:8px}
   .jevbox::-webkit-scrollbar-thumb{background:#39414f;border-radius:4px}
   .jevt{width:100%;border-collapse:collapse;font-size:12.5px;table-layout:fixed}
