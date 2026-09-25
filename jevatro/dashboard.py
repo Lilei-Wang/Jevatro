@@ -1,9 +1,8 @@
 """Jevatro 决策观测台（本地 Web，纯标准库）。
 
 用法: python dashboard.py  →  http://127.0.0.1:8765
-双栏布局：
-  左 01 对局实况   实时截图 + 局面数据（盲注/手牌[绿框=建议出牌]/小丑/商店）
-  右 02 决策流     时间正序自动滚动跟随（动作/Jev/LLM 卡片，展开原文）
+单栏布局：
+  02 决策流（全宽）  时间正序自动滚动跟随（动作/Jev/LLM 卡片，展开原文，键名中文化）
 """
 from __future__ import annotations
 
@@ -157,7 +156,7 @@ PAGE = r"""<!DOCTYPE html>
   select{background:var(--card2);color:var(--txt);border:1px solid var(--line);
     border-radius:7px;padding:5px 9px;font-size:12px;max-width:280px}
   label{font-size:12px;color:var(--muted);display:flex;gap:5px;align-items:center}
-  .wrap{display:grid;grid-template-columns:minmax(430px,45%) 1fr;gap:16px;
+  .wrap{display:grid;grid-template-columns:1fr;gap:16px;
         padding:16px 22px;max-width:1600px;margin:0 auto}
   @media(max-width:980px){.wrap{grid-template-columns:1fr}}
   .panel{background:var(--card);border:1px solid var(--line);border-radius:13px;
@@ -246,7 +245,6 @@ PAGE = r"""<!DOCTYPE html>
   <div class="logo"><span class="chip">🃏</span>
     <div>JEVATRO<div class="lab">决策观测台</div></div></div>
   <div class="dots">
-    <span class="dot" id="dGame"><i></i>游戏接口</span>
     <span class="dot" id="dRun"><i></i>对局</span>
     <select id="runSel" onchange="selRun(this.value)"></select>
     <label><input type="checkbox" id="follow" checked>跟随最新</label>
@@ -254,35 +252,7 @@ PAGE = r"""<!DOCTYPE html>
 </header>
 
 <div class="wrap">
-  <!-- 左：对局实况 -->
-  <div>
-    <div class="panel">
-      <div class="ptitle"><span class="no">01</span><b>对局实况</b>
-        <span class="live" id="gstate">—</span></div>
-      <img class="shot" id="shot" alt="游戏画面加载中…">
-      <div class="grid4">
-        <div class="stat"><b id="sAnte">-</b><span>底注轮</span></div>
-        <div class="stat"><b id="sRound">-</b><span>回合</span></div>
-        <div class="stat"><b id="sMoney" class="money">-</b><span>金币</span></div>
-        <div class="stat"><b id="sChips" class="chips">-</b><span>得分/需求</span></div>
-      </div>
-      <div style="margin-top:12px">
-        <div class="rowline"><span>阶段</span><b id="gPhase">-</b></div>
-        <div class="rowline"><span>手数 / 弃牌</span><b id="gHands">-</b></div>
-        <div class="rowline"><span>当前盲注</span><b id="gBlind">-</b></div>
-      </div>
-      <div class="sec">手牌<span id="hHint"></span>（绿框 = 求解器建议打出）</div>
-      <div class="hand" id="handCards"></div>
-      <div class="sec">小丑</div>
-      <div id="jokers"></div>
-      <div class="sec">商店</div>
-      <div id="shop"></div>
-      <div class="sec">兑换券</div>
-      <div id="vouchers"></div>
-    </div>
-  </div>
-
-  <!-- 右：决策流 -->
+  <!-- 决策流（全宽） -->
   <div>
     <div class="panel">
       <div class="ptitle"><span class="no">02</span><b>决策流</b>
@@ -333,62 +303,28 @@ async function refreshRuns(){
 function selRun(f){cur=f;document.getElementById('follow').checked=false;
   lastCount=-1;renderRun();}
 
-async function refreshGame(){
-  try{
-    const gs=await (await fetch('/api/gamestate')).json();
-    const d=document.getElementById('dGame');
-    if(gs.error){d.className='dot off';return;}
-    d.className='dot on';
-    const g=gs.state;
-    document.getElementById('gPhase').textContent=ZH_STATE[g.state]||g.state||'-';
-    document.getElementById('sAnte').textContent=g.ante_num??'-';
-    document.getElementById('sRound').textContent=g.round_num??'-';
-    document.getElementById('sMoney').textContent='$'+(g.money??'-');
-    const r=g.round||{};
-    const blind=[...Object.values(g.blinds||{})].find(b=>b&&(b.status==='CURRENT'||b.status==='SELECT'));
-    document.getElementById('sChips').textContent=(r.chips||0)+'/'+(blind?blind.score:'-');
-    document.getElementById('gBlind').textContent=blind?
-      `${blind.name} 需${blind.score}${blind.effect?'（'+blind.effect+'）':''}`:'-';
-    document.getElementById('gHands').textContent=`${r.hands_left??'-'}手 / ${r.discards_left??'-'}弃`;
-    const hintSet=new Set(hint.indices||[]);
-    const hand=(g.hand||{}).cards||[];
-    document.getElementById('handCards').innerHTML=hand.map((c,i)=>{
-      const v=c.value||{},red=v.suit==='H'||v.suit==='D',m=modZh(c.modifier);
-      return `<div class="pcard ${hintSet.has(i)?'hint':''}">
-        <span class="r ${red?'R':'B'}">${v.rank||'?'}</span>
-        <span class="s ${red?'R':'B'}">${SUIT[v.suit]||''}</span>
-        ${m?`<span class="m">${esc(m)}</span>`:''}</div>`;}).join('')
-      ||'<span style="color:#5f6878;font-size:12px">（非出牌阶段）</span>';
-    document.getElementById('hHint').textContent =
-      hint.hand?` → 建议：${hint.hand} ≈${hint.total}分`:'';
-    const jk=(g.jokers||{}).cards||[];
-    document.getElementById('jokers').innerHTML=jk.map(j=>
-      itemHtml(j.label||j.key,j._desc,'')).join('')
-      ||'<span style="color:#5f6878;font-size:12px">无</span>';
-    const shop=(g.shop||{}).cards||[];
-    document.getElementById('shop').innerHTML=shop.map(c=>
-      itemHtml(`${ZH_SET[c.set]||c.set}·${c.label||c.key}`,c._desc,
-        '$'+((c.cost||{}).buy??'?'))).join('')
-      ||'<span style="color:#5f6878;font-size:12px">（非商店阶段）</span>';
-    const vs=(g.vouchers||{}).cards||[];
-    document.getElementById('vouchers').innerHTML=vs.map(c=>
-      itemHtml(c.label||c.key,c._desc,'$'+((c.cost||{}).buy??'?'))).join('')
-      ||'<span style="color:#5f6878;font-size:12px">无</span>';
-  }catch(e){}
-}
-function itemHtml(name,desc,price){
-  return `<div class="item"><span class="k">${esc(name)}</span>` +
-    (desc?`<span class="d">${esc(desc).slice(0,60)}</span>`:'') +
-    (price?`<span class="p">${esc(price)}</span>`:'') + `</div>`;
-}
-
-async function refreshHint(){
-  try{hint=await (await fetch('/api/hint')).json();}catch(e){}
-}
-async function refreshShot(){
-  try{const d=await (await fetch('/api/shot')).json();
-    if(d.b64)document.getElementById('shot').src='data:image/png;base64,'+d.b64;
-  }catch(e){}
+// —— 中文键名渲染：把日志记录渲染成中文可读文本（替代原始 JSON）——
+const ZH_KEY={t:'时间',kind:'类型',method:'动作',params:'参数',before:'动作前',after:'动作后',
+  error:'错误',extra:'备注',state:'局面',questions:'题目',answers:'回答',latency:'耗时',
+  model:'模型',prompt:'请求原文',reply:'模型回复',in_tokens:'输入令牌',out_tokens:'输出令牌',
+  in_hit_tokens:'缓存命中',in_miss_tokens:'缓存未命中',cost_usd:'成本(美元)',
+  final:'终局',actions:'动作数',illegal:'非法动作',duration:'总耗时',
+  seed:'种子',ante:'底注轮',round:'轮次',money:'金币',chips:'筹码',hands_left:'剩余手数',
+  n_jokers:'小丑数',won:'是否通关',why:'理由',cards:'卡牌',confidence:'置信度',
+  choice:'选择',score:'打分',noul:'概率',instructions:'题目说明',criteria:'选项',
+  fallback:'回退策略',file:'文件',archetype:'方向',deck:'牌组',stake:'注级'};
+const ZH_VAL={play:'出牌',discard:'弃牌',buy:'购买',sell:'卖出',skip:'跳过',select:'选盲',
+  use:'使用',reroll:'重掷',pack:'开包',cash_out:'结算',next_round:'进入下轮',start:'开局',
+  menu:'回主菜单',action:'动作',jev:'Jev判断',llm:'LLM判断',result:'终局',
+  game_start:'开局',frozen:'冻结',jev_error:'Jev失败',llm_error:'LLM失败',boot:'启动',
+  true:'是',false:'否'};
+function zhJson(v,ind){
+  const pad='  '.repeat(ind);
+  if(v===null||v===undefined)return '无';
+  if(typeof v!=='object')return ZH_VAL[String(v)]??JSON.stringify(v);
+  if(Array.isArray(v))return '['+v.map(x=>zhJson(x,ind+1)).join(', ')+']';
+  return '\n'+Object.entries(v).map(([k,val])=>
+    `${pad}  ${ZH_KEY[k]||k}: ${zhJson(val,ind+1)}`).join('\n');
 }
 
 function nearBottom(el){return el.scrollHeight-el.scrollTop-el.clientHeight<48}
@@ -436,10 +372,10 @@ function evHtml(r,i){
     const why=r.extra?whyOf(r.extra):'';
     head=`<span class="t">${r.t}秒</span><span class="tag action">动作</span>
       <b style="font-family:var(--mono);font-size:12.5px">${zhAct(r.method)}</b>
-      <code style="color:#9aa3b5;font-size:11px">${JSON.stringify(r.params).slice(0,54)}</code>
+      <code style="color:#9aa3b5;font-size:11px">${zhParams(r)}</code>
       <span class="why">${why}</span>
       ${r.error?`<span class="err">✗ ${esc(r.error).slice(0,66)}</span>`:''}`;
-    body=copyBtn(r)+`<pre>${esc(JSON.stringify(r,null,1))}</pre>`;
+    body=copyBtn(r)+`<pre>${esc(zhJson(r,0))}</pre>`;
   }else if(r.kind==='jev'){
     const n=Object.keys(r.questions||{}).length;
     head=`<span class="t">${r.t}秒</span><span class="tag jev">JEV 判断</span>
@@ -462,18 +398,28 @@ function evHtml(r,i){
   }else if(r.kind==='jev_error'){
     head=`<span class="t">${r.t}秒</span><span class="tag jev_error">JEV 失败</span>
       <span class="err">${esc(r.error||'').slice(0,76)} → 已回退${r.fallback||''}</span>`;
-    body=`<pre>${esc(JSON.stringify(r,null,1))}</pre>`;
+    body=`<pre>${esc(zhJson(r,0))}</pre>`;
   }else if(r.kind==='result'){
     head=`<span class="t">${r.t}秒</span><span class="tag result">终局</span>
       <span class="sum">${r.final&&r.final.won?'🏆 通关':'💀 失败'} · 止步底注轮 ${r.final?r.final.ante:'?'}
        · ${r.actions}动作 · ${r.duration}秒</span>`;
-    body=`<pre>${esc(JSON.stringify(r,null,1))}</pre>`;
+    body=`<pre>${esc(zhJson(r,0))}</pre>`;
   }else{
     head=`<span class="t">${r.t}秒</span><span class="tag sys">${zhSys(r.kind)}</span>`;
-    body=`<pre>${esc(JSON.stringify(r,null,1))}</pre>`;
+    body=`<pre>${esc(zhJson(r,0))}</pre>`;
   }
   return `<div class="ev" data-i="${i}"><div class="h">${head}</div>
     <div class="d">${body}</div></div>`;
+}
+function zhParams(r){
+  const p=r.params||{};
+  if(Array.isArray(p.cards))return (r.method==='discard'?'弃第':'出第')+
+    p.cards.map(i=>i+1).join('/')+'张';
+  if(p.card!=null)return '商品位'+(+p.card+1);
+  if(p.voucher!=null)return '兑换券'+(+p.voucher+1);
+  if(p.joker!=null)return '小丑位'+(+p.joker+1);
+  if(p.consumable!=null)return '消耗牌'+(+p.consumable+1);
+  return Object.entries(p).map(([k,v])=>`${ZH_KEY[k]||k}=${ZH_VAL[String(v)]??v}`).join(' ');
 }
 function zhAct(m){return({play:'出牌',discard:'弃牌',buy:'购买',sell:'卖出',skip:'跳过',
   select:'选盲',use:'使用',reroll:'重掷',pack:'开包',cash_out:'结算',
@@ -504,9 +450,6 @@ document.getElementById('stream').addEventListener('scroll',e=>{
 refreshRuns();renderRun();
 setInterval(()=>{refreshRuns();
   if(document.getElementById('follow').checked||!cur)renderRun();},2500);
-setInterval(()=>{refreshHint().then(refreshGame)},2000);
-setInterval(refreshShot,4000);
-refreshHint().then(refreshGame);refreshShot();
 </script>
 </body>
 </html>
