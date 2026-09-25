@@ -72,6 +72,87 @@ def load_runs():
     return runs
 
 
+def compute_compare() -> dict:
+    """汇总全部历史日志，输出 Jev vs DeepSeek-LLM 对比数据（供 04 模块）。"""
+    import time as _time
+    import pricing
+    agg = {"jev": {"runs": 0, "antes": [], "calls": 0, "lat": 0.0, "lat_n": 0,
+                   "fails": 0, "cost": 0.0, "tin": 0, "tout": 0},
+           "llm": {"runs": 0, "antes": [], "calls": 0, "lat": 0.0, "lat_n": 0,
+                   "fails": 0, "cost": 0.0, "tin": 0, "tout": 0}}
+    now = _time.time()
+    for f in LOG_DIR.glob("run_*.jsonl"):
+        if "_jev_" in f.name:
+            cfg = "jev"
+        elif "_llm_" in f.name:
+            cfg = "llm"
+        else:
+            continue
+        a = agg[cfg]
+        recs = []
+        try:
+            for line in f.read_text(encoding="utf-8").splitlines():
+                try:
+                    recs.append(json.loads(line))
+                except json.JSONDecodeError:
+                    pass
+        except OSError:
+            continue
+        result = next((r for r in recs if r.get("kind") == "result"), None)
+        if result and result.get("final", {}).get("ante") is not None:
+            a["runs"] += 1
+            a["antes"].append(result["final"]["ante"])
+        for r in recs:
+            k = r.get("kind")
+            if k in ("jev", "llm"):
+                a["calls"] += 1
+                a["lat"] += r.get("latency") or 0
+                a["lat_n"] += 1
+                if cfg == "jev":
+                    tin, tout = r.get("in_tokens"), r.get("out_tokens")
+                    if r.get("cost_usd") is not None and tin:
+                        a["tin"] += tin
+                        a["tout"] += tout or 0
+                        a["cost"] += r.get("cost_usd", 0.0)
+                    else:
+                        est = pricing.est_tokens(r.get("state", "") +
+                                                 json.dumps(r.get("questions", {}),
+                                                            ensure_ascii=False))
+                        a["tin"] += est
+                        a["cost"] += pricing.jev_cost_usd(est, 0)
+                else:
+                    a["tin"] += r.get("in_tokens") or 0
+                    a["tout"] += r.get("out_tokens") or 0
+                    if r.get("cost_usd") is not None:
+                        a["cost"] += r.get("cost_usd", 0.0)
+                    elif "glm" not in (r.get("model") or ""):
+                        a["cost"] += pricing.llm_cost_usd(
+                            r.get("in_tokens") or 0, 0, r.get("out_tokens") or 0)
+            elif k in ("jev_error", "llm_error"):
+                a["fails"] += 1
+            elif k == "action" and cfg == "llm":
+                # LLM 解析失败不落 llm_error 记录，但回退购买带 naive_fallback 标记
+                # （标记可能在记录顶层 extra 或 params.extra 里）
+                ex = r.get("extra") or (r.get("params") or {}).get("extra") or {}
+                if "naive_fallback" in str((ex or {}).get("why", "")):
+                    a["fails"] += 1
+    out = {}
+    for cfg, a in agg.items():
+        n = max(a["runs"], 1)
+        out[cfg] = {
+            "runs": a["runs"],
+            "ante_avg": round(sum(a["antes"]) / n, 2) if a["antes"] else None,
+            "ante_max": max(a["antes"]) if a["antes"] else None,
+            "calls": a["calls"],
+            "lat_avg": round(a["lat"] / max(a["lat_n"], 1), 2),
+            "fails": a["fails"],
+            "cost_usd": round(a["cost"], 4),
+            "cost_per_run": round(a["cost"] / n, 5),
+            "tokens": f"{a['tin']:,}/{a['tout']:,}",
+        }
+    return out
+
+
 def load_run(name: str):
     f = LOG_DIR / name
     if not f.exists() or ".." in name:
@@ -200,22 +281,40 @@ PAGE = r"""<!DOCTYPE html>
   .streambox::-webkit-scrollbar-thumb{background:#2a303c;border-radius:4px}
   .jevbox{max-height:40vh;overflow-y:auto}
   .jevbox::-webkit-scrollbar{width:8px}
-  .jevbox::-webkit-scrollbar-thumb{background:#2a303c;border-radius:4px}
-  .jevt{width:100%;border-collapse:collapse;font-size:12.5px}
+  .jevbox::-webkit-scrollbar-thumb{background:#39414f;border-radius:4px}
+  .jevt{width:100%;border-collapse:collapse;font-size:12.5px;table-layout:fixed}
   .jevt th{position:sticky;top:0;background:#161a20;color:#9aa3b5;font-weight:500;
            text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);z-index:1}
-  .jevt td{padding:6px 10px;border-bottom:1px solid #1c222c;vertical-align:top}
-  .jevt tr:first-child td{background:rgba(248,113,113,.07)}
-  .jevt .tt{color:#5f6878;font-family:var(--mono);font-size:11.5px;white-space:nowrap}
-  .jevt .qk{color:#fbbf24;font-family:var(--mono);font-size:11px;display:block}
-  .jevt .qi{color:#9aa3b5;font-size:11.5px}
+  .jevt td{padding:7px 10px;border-bottom:1px solid #262d3a;vertical-align:middle;
+           white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .jevt tr.newest td{background:rgba(52,211,153,.07);border-bottom:1px solid #2f9e63}
+  .jevt tr.newest td:first-child{box-shadow:inset 3px 0 0 #34d399}
+  .badge-new{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:8px;
+             background:#34d399;color:#0d0f12;font-size:10px;font-weight:700}
+  .jstat{display:flex;gap:26px;align-items:center;padding:10px 14px;margin-bottom:10px;
+         border:1px solid var(--line);border-radius:8px;background:#10141a}
+  .jstat .kv b{display:block;font-size:22px;font-family:var(--mono);color:#e8ecf3;line-height:1.1}
+  .jstat .kv span{font-size:11px;color:#9aa3b5}
+  .jevt .tt{color:#5f6878;font-family:var(--mono);font-size:11.5px}
+  .jevt .qk{color:#fbbf24;font-family:var(--mono);font-size:11px;display:block;
+            white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .jevt .qi{color:#9aa3b5;font-size:11.5px;display:block;
+            white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .jevt .dv{font-size:12.5px}
-  .jevt .cbar{display:flex;align-items:center;gap:8px}
-  .jevt .cbar .bar{flex:1;height:6px;border-radius:3px;background:#232935;overflow:hidden}
-  .jevt .cbar .bar i{display:block;height:100%;border-radius:3px}
-  .jevt .cbar b{font-family:var(--mono);font-size:11.5px;min-width:34px;text-align:right}
+  .jevt .cbar{display:flex;align-items:center;gap:10px}
+  .jevt .cbar .bar{flex:1;height:7px;border-radius:4px;background:#232935;overflow:hidden}
+  .jevt .cbar .bar i{display:block;height:100%;border-radius:4px}
+  .jevt .cbar b{font-family:var(--mono);font-size:12px;min-width:40px;text-align:right}
   .jevt .jerr td{color:#f87171}
   .jempty{color:#5f6878;text-align:center;padding:18px}
+  .cmp{width:100%;border-collapse:collapse;font-size:13px}
+  .cmp th{background:#161a20;color:#9aa3b5;font-weight:500;text-align:left;
+          padding:8px 14px;border-bottom:1px solid var(--line)}
+  .cmp .thjev{color:#f87171}
+  .cmp .thllm{color:#60a5fa}
+  .cmp td{padding:8px 14px;border-bottom:1px solid #262d3a;color:#c6cede}
+  .cmp td.win{color:#34d399;font-weight:700}
+  .cmp td .sub{display:block;font-size:10.5px;color:#5f6878;font-weight:400}
   .mcrow{display:inline-flex;gap:4px;vertical-align:middle}
   .mc{display:inline-flex;align-items:center;justify-content:center;min-width:30px;height:24px;
       padding:0 4px;border:1px solid #2a303c;border-radius:4px;background:#10141a;
@@ -301,13 +400,28 @@ PAGE = r"""<!DOCTYPE html>
     <div class="panel">
       <div class="ptitle"><span class="no">03</span><b>Jev 决策明细</b>
         <span class="live" id="jStat">逐题置信度</span></div>
+      <div class="jstat" id="jStatBar"></div>
       <div class="jevbox">
         <table class="jevt" id="jevTable">
           <thead><tr><th style="width:64px">时间</th><th>题目</th>
-            <th style="width:170px">决策</th><th style="width:150px">置信度</th></tr></thead>
+            <th style="width:180px">决策</th><th style="width:160px">置信度</th></tr></thead>
           <tbody id="jevRows"><tr><td colspan="4" class="jempty">暂无 Jev 决策</td></tr></tbody>
         </table>
       </div>
+    </div>
+  </div>
+
+  <!-- 模型对比 -->
+  <div>
+    <div class="panel">
+      <div class="ptitle"><span class="no">04</span><b>模型对比</b>
+        <span class="live">Jev vs DeepSeek-LLM · 全部历史局</span></div>
+      <table class="cmp" id="cmpTable">
+        <thead><tr><th style="width:180px">指标</th>
+          <th><span class="thjev">🃏 Jev（判断模型）</span></th>
+          <th><span class="thllm">🤖 DeepSeek-flash（LLM）</span></th></tr></thead>
+        <tbody id="cmpRows"><tr><td colspan="3" class="jempty">统计中…</td></tr></tbody>
+      </table>
     </div>
   </div>
 </div>
@@ -409,12 +523,12 @@ async function renderRun(){
 // —— Jev 决策明细：逐题一行（时间/题目/决策/置信度），最新在最上 ——
 function renderJevDecisions(recs){
   const rows=[];
-  let confSum=0,confN=0;
+  let confSum=0,confN=0,hiN=0;
   for(const r of recs){
     if(r.kind==='jev'){
       for(const [k,a] of Object.entries(r.answers||{})){
         const c=a&&a.confidence;
-        if(c!=null){confSum+=c;confN++;}
+        if(c!=null){confSum+=c;confN++;if(c>=0.6)hiN++;}
         rows.push({t:r.t,k,q:(r.questions||{})[k]||'',a,c,lat:r.latency});
       }
     }else if(r.kind==='jev_error'){
@@ -424,17 +538,58 @@ function renderJevDecisions(recs){
   const tb=document.getElementById('jevRows');
   if(!rows.length){tb.innerHTML='<tr><td colspan="4" class="jempty">暂无 Jev 决策</td></tr>';}
   else{
-    tb.innerHTML=rows.slice(-120).reverse().map(d=>d.err?
+    tb.innerHTML=rows.slice(-120).reverse().map((d,idx)=>d.err?
       `<tr class="jerr"><td class="tt">${d.t}秒</td><td colspan="2">✗ ${esc(d.err).slice(0,70)}</td>
         <td>已回退${esc(d.fb).slice(0,16)}</td></tr>`:
-      `<tr><td class="tt">${d.t}秒</td>
-        <td><span class="qk">${esc(d.k)}</span><span class="qi">${esc(String(d.q).slice(0,60))}</span></td>
-        <td class="dv">${ansOf(d.a)}</td>
+      `<tr class="${idx===0?'newest':''}">
+        <td class="tt">${d.t}秒${idx===0?'<span class="badge-new">最新</span>':''}</td>
+        <td title="${esc(String(d.q))}"><span class="qk">${esc(d.k)}</span><span class="qi">${esc(String(d.q))}</span></td>
+        <td class="dv" title="${esc(ansText(d.a))}">${ansOf(d.a)}</td>
         <td>${d.c!=null?`<div class="cbar"><div class="bar"><i style="width:${Math.round(d.c*100)}%;
-          background:${d.c>=0.6?'#34d399':d.c>=0.35?'#fbbf24':'#f87171'}"></i></div><b>${(+d.c).toFixed(2)}</b></div>`:'—'}</td></tr>`).join('');
+          background:${d.c>=0.6?'#34d399':d.c>=0.35?'#fbbf24':'#f87171'}"></i></div><b>${(+d.c).toFixed(2)}</b></div>`
+          :'<span style="color:#5f6878">无信号</span>'}</td></tr>`).join('');
   }
   document.getElementById('jStat').textContent=confN?
-    `共 ${confN} 题 · 平均置信度 ${(confSum/confN).toFixed(2)}`:'逐题置信度';
+    `平均置信度 ${(confSum/confN).toFixed(2)}`:'逐题置信度';
+  document.getElementById('jStatBar').innerHTML=confN?
+    `<div class="kv"><b>${rows.length}</b><span>决策题数</span></div>
+     <div class="kv"><b style="color:${(confSum/confN)>=0.5?'#34d399':'#fbbf24'}">${(confSum/confN).toFixed(2)}</b><span>平均置信度</span></div>
+     <div class="kv"><b>${Math.round(hiN*100/confN)}%</b><span>高置信占比(≥0.6)</span></div>
+     <div class="kv"><b>${rows.filter(d=>d.err).length}</b><span>失败回退</span></div>`:'';
+}
+
+// —— 模型对比：Jev vs DeepSeek-LLM ——
+async function renderCompare(){
+  try{
+    const d=await (await fetch('/api/compare')).json();
+    const j=d.jev,l=d.llm;
+    const rows=[
+      ['对局数',j.runs,l.runs,'more'],
+      ['平均到达底注轮',j.ante_avg,l.ante_avg,'more'],
+      ['最深底注轮',j.ante_max,l.ante_max,'more'],
+      ['单次决策延迟',j.lat_avg+'秒',l.lat_avg+'秒','less'],
+      ['决策调用总数',j.calls,l.calls,''],
+      ['失败/回退次数',j.fails,l.fails,'less'],
+      ['单局成本','$'+j.cost_per_run.toFixed(5),'$'+l.cost_per_run.toFixed(5),'less'],
+      ['tokens(入/出)',j.tokens,l.tokens,''],
+    ];
+    document.getElementById('cmpRows').innerHTML=rows.map(([k,jv,lv,dir])=>{
+      const mark=(v,better)=>{
+        if(!dir||v==null||better==null)return '';
+        const win=(dir==='more'?v>better:v<better);
+        return win?' win':'';
+      };
+      return `<tr><td>${k}</td><td class="${mark(jv,lv)}">${jv??'—'}</td>
+        <td class="${mark(lv,jv)}">${lv??'—'}</td></tr>`;
+    }).join('');
+  }catch(e){}
+}
+function ansText(a){
+  if(!a)return'';
+  if(a.type==='noul')return`概率 ${(+a.noul).toFixed(2)} · 置信度 ${a.confidence!=null?(+a.confidence).toFixed(2):'无'}`;
+  if(a.type==='choice')return`选择 ${a.choice} · 置信度 ${a.confidence!=null?(+a.confidence).toFixed(2):'无'}`;
+  if(a.type==='score')return`打分 ${(+a.score).toFixed(2)}/4 · 置信度 ${a.confidence!=null?(+a.confidence).toFixed(2):'无'}`;
+  return JSON.stringify(a).slice(0,60);
 }
 
 function evHtml(r,i){
@@ -529,9 +684,10 @@ document.getElementById('stream').addEventListener('scroll',e=>{
   document.getElementById('tobot').style.display=nearBottom(el)?'none':'block';
 });
 
-refreshRuns();renderRun();
+refreshRuns();renderRun();renderCompare();
 setInterval(()=>{refreshRuns();
   if(document.getElementById('follow').checked||!cur)renderRun();},2500);
+setInterval(renderCompare,30000);
 </script>
 </body>
 </html>
@@ -552,6 +708,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = urlparse(self.path).path
+        if path == "/api/compare":
+            return self._json(compute_compare())
         if path == "/":
             body = PAGE.encode("utf-8")
             self.send_response(200)
