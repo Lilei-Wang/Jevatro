@@ -43,8 +43,12 @@ def _enrich(gs: dict) -> dict:
 
 
 def load_runs():
+    import time as _time
+    files = sorted(LOG_DIR.glob("run_*.jsonl"),
+                   key=lambda f: f.stat().st_mtime, reverse=True)
+    now = _time.time()
     runs = []
-    for f in sorted(LOG_DIR.glob("run_*.jsonl"), reverse=True):
+    for f in files:
         recs = []
         try:
             for line in f.read_text(encoding="utf-8").splitlines():
@@ -57,8 +61,10 @@ def load_runs():
         result = next((r for r in recs if r.get("kind") == "result"), {})
         cfg = ("jev" if "_jev_" in f.name
                else "llm" if "_llm_" in f.name else "naive")
+        # 进行中 = 无结果记录 且 最近 10 分钟内仍在写入（排除历史无 result 的测试日志）
+        live = result == {} and (now - f.stat().st_mtime) < 600
         runs.append({
-            "file": f.name, "config": CFG_ZH[cfg], "live": result == {},
+            "file": f.name, "config": CFG_ZH[cfg], "live": live,
             "records": len(recs),
             "jev_calls": sum(1 for r in recs if r.get("kind") == "jev"),
             "llm_calls": sum(1 for r in recs if r.get("kind") == "llm"),
@@ -362,11 +368,11 @@ async function refreshGame(){
     const shop=(g.shop||{}).cards||[];
     document.getElementById('shop').innerHTML=shop.map(c=>
       itemHtml(`${ZH_SET[c.set]||c.set}·${c.label||c.key}`,c._desc,
-        '$'+(c.cost&&c.cost.buy??'?'))).join('')
+        '$'+((c.cost||{}).buy??'?'))).join('')
       ||'<span style="color:#5f6878;font-size:12px">（非商店阶段）</span>';
     const vs=(g.vouchers||{}).cards||[];
     document.getElementById('vouchers').innerHTML=vs.map(c=>
-      itemHtml(c.label||c.key,c._desc,'$'+(c.cost&&c.cost.buy??'?'))).join('')
+      itemHtml(c.label||c.key,c._desc,'$'+((c.cost||{}).buy??'?'))).join('')
       ||'<span style="color:#5f6878;font-size:12px">无</span>';
   }catch(e){}
 }
