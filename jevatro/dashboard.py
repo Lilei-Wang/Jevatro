@@ -216,6 +216,12 @@ PAGE = r"""<!DOCTYPE html>
   .jevt .cbar b{font-family:var(--mono);font-size:11.5px;min-width:34px;text-align:right}
   .jevt .jerr td{color:#f87171}
   .jempty{color:#5f6878;text-align:center;padding:18px}
+  .mcrow{display:inline-flex;gap:4px;vertical-align:middle}
+  .mc{display:inline-flex;align-items:center;justify-content:center;min-width:30px;height:24px;
+      padding:0 4px;border:1px solid #2a303c;border-radius:4px;background:#10141a;
+      font-family:var(--mono);font-size:12px;font-weight:600}
+  .mc.R{color:#f87171;border-color:#4a2a30}
+  .mc.B{color:#dbe3f0;border-color:#2a303c}
   .tobot{position:sticky;bottom:6px;align-self:flex-end;background:var(--green);
          color:#06281c;border:none;border-radius:999px;padding:6px 14px;
          font-size:12px;font-weight:700;cursor:pointer;display:none;z-index:5}
@@ -435,9 +441,13 @@ function evHtml(r,i){
   let head='',body='';
   if(r.kind==='action'){
     const why=r.extra?whyOf(r.extra):'';
+    const cardsHtml=(r.method==='play'||r.method==='discard')&&
+      Array.isArray(r.params.cards)&&Array.isArray((r.before||{}).hand);
     head=`<span class="t">${r.t}秒</span><span class="tag action">动作</span>
       <b style="font-family:var(--mono);font-size:12.5px">${zhAct(r.method)}</b>
-      <code style="color:#9aa3b5;font-size:11px">${zhParams(r)}</code>
+      ${cardsHtml
+        ? `<span class="mcrow">${r.params.cards.map(i=>cardChip((r.before.hand||[])[i])).join('')}</span>`
+        : `<code style="color:#9aa3b5;font-size:11px">${zhParams(r)}</code>`}
       <span class="why">${why}</span>
       ${r.error?`<span class="err">✗ ${esc(r.error).slice(0,66)}</span>`:''}`;
     body=copyBtn(r)+`<pre>${esc(zhJson(r,0))}</pre>`;
@@ -485,6 +495,13 @@ function zhParams(r){
   if(p.joker!=null)return '小丑位'+(+p.joker+1);
   if(p.consumable!=null)return '消耗牌'+(+p.consumable+1);
   return Object.entries(p).map(([k,v])=>`${ZH_KEY[k]||k}=${ZH_VAL[String(v)]??v}`).join(' ');
+}
+// 迷你牌面：key 形如 "S_A"（花色_点数），红桃/方块为红
+function cardChip(key){
+  if(!key||typeof key!=='string')return '<span class="mc">?</span>';
+  const [s,rank]=key.split('_');
+  const red=s==='H'||s==='D';
+  return `<span class="mc ${red?'R':'B'}">${SUIT[s]||''}${rank||'?'}</span>`;
 }
 function zhAct(m){return({play:'出牌',discard:'弃牌',buy:'购买',sell:'卖出',skip:'跳过',
   select:'选盲',use:'使用',reroll:'重掷',pack:'开包',cash_out:'结算',

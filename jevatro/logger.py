@@ -10,7 +10,7 @@ LOG_DIR = Path(__file__).parent / "logs"
 
 
 def _brief(gs: dict) -> dict:
-    """状态摘要：完整 state 另存，这里只留关键字段。"""
+    """状态摘要：完整 state 另存，这里只留关键字段（含手牌 key，供面板画牌面）。"""
     return {
         "state": gs.get("state"),
         "ante": gs.get("ante_num"),
@@ -20,6 +20,7 @@ def _brief(gs: dict) -> dict:
         "hands_left": gs.get("round", {}).get("hands_left"),
         "n_jokers": gs.get("jokers", {}).get("count"),
         "won": gs.get("won"),
+        "hand": [c.get("key") for c in gs.get("hand", {}).get("cards", [])],
     }
 
 
