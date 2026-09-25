@@ -72,9 +72,52 @@ BUY_VALUE_TAU = 0.40    # 综合价值阈值（置信度仅记录不门控：实
 ARCHETYPE_TAU = 0.50    # 方向识别的 noul 阈值
 BLEND_DEFAULT = 0.5     # 方向权重与 default 各占一半（防止 econ 方向过度稀释战力权重）
 
-# 可买的卡包：小丑包(加槽)/标准牌包(进牌组)/天体包(星球即用)；
-# 塔罗包/幻灵包开包需即时选目标，暂不买
-BUYABLE_PACK_PREFIXES = ("p_buffoon", "p_standard", "p_celestial")
+# 可买的卡包：小丑包(加槽)/标准牌包(进牌组)/天体包(星球即用)/
+# 塔罗包/幻灵包（开包选卡已由 pack_pick 支持，解禁）
+BUYABLE_PACK_PREFIXES = ("p_buffoon", "p_standard", "p_celestial", "p_tarot", "p_spectral")
+
+# 星球卡 → 牌型（购买守卫：只买升级主力/常用牌型的星球，避免浪费）
+PLANET_HAND = {
+    "c_mercury": "Pair", "c_venus": "Three of a Kind", "c_earth": "Full House",
+    "c_mars": "Four of a Kind", "c_jupiter": "Flush", "c_saturn": "Straight",
+    "c_uranus": "Two Pair", "c_neptune": "Straight Flush", "c_pluto": "High Card",
+    "c_planet_x": "Five of a Kind", "c_ceres": "Flush House", "c_eris": "Flush Five",
+}
+# 方向关键词 → 对应牌型（arch 匹配时放行）
+ARCH_HANDS = {
+    "pair": {"Pair", "Two Pair", "Three of a Kind", "Full House"},
+    "flush": {"Flush", "Full House", "Flush House"},
+    "straight": {"Straight", "Straight Flush"},
+    "highcard": {"High Card"},
+}
+MAX_DECK_CARDS = 60   # 卡组膨胀约束：超过后不再买标准牌包（稀释抽牌质量）
+
+
+def _arch_hint(gs: dict) -> str:
+    """代码侧方向估算（星球守卫用）：取历史打得最多的牌型所属方向。"""
+    try:
+        best_hand, best_n = None, -1
+        for name, info in (gs.get("hands") or {}).items():
+            n = (info or {}).get("played", 0)
+            if n > best_n:
+                best_hand, best_n = name, n
+        for arch, hands in ARCH_HANDS.items():
+            if best_hand in hands:
+                return arch
+    except Exception:
+        pass
+    return ""
+
+
+def _planet_ok(gs: dict, key: str, arch: str) -> bool:
+    """星球卡守卫：升级的牌型 ∈ 方向匹配 或 历史已打 ≥2 次。"""
+    hand = PLANET_HAND.get(key)
+    if not hand:
+        return True
+    played = (gs.get("hands", {}).get(hand, {}) or {}).get("played", 0)
+    if played >= 2:
+        return True
+    return hand in ARCH_HANDS.get(arch, set())
 
 
 class JevLayer:
@@ -129,6 +172,7 @@ class JevLayer:
         reroll_cost = gs.get("round", {}).get("reroll_cost", 5)
 
         # 可行性过滤（代码层硬约束）
+        arch_hint = _arch_hint(gs)
         candidates = []   # (slot_id, card, kind)
         slots_full = jokers_area.get("count", 0) >= jokers_area.get("limit", 5)
         for i, c in enumerate(shop_cards):
@@ -141,9 +185,14 @@ class JevLayer:
                     continue
                 if c.get("key") in NO_BUY:   # 无安全用法的消耗牌不买
                     continue
+            if s == "PLANET" and not _planet_ok(gs, c.get("key", ""), arch_hint):
+                continue  # 星球守卫：不升非主力牌型
             if s == "BOOSTER":
                 if not c.get("key", "").startswith(BUYABLE_PACK_PREFIXES):
-                    continue  # 塔罗包/幻灵包暂不买
+                    continue
+                if (c.get("key", "").startswith("p_standard")
+                        and gs.get("cards", {}).get("count", 52) >= MAX_DECK_CARDS):
+                    continue  # 卡组已大，不再稀释
             if s not in ("JOKER", "PLANET", "VOUCHER", "TAROT", "SPECTRAL", "BOOSTER"):
                 continue
             candidates.append((f"item{i}", c, s))
@@ -275,12 +324,18 @@ class JevLayer:
 
     # ------------------------------------------------------------------
     def pack_pick(self, gs: dict) -> tuple[int | None, str]:
-        """开包：一次 Choice 问"对当前构筑最有价值的一张"。返回 (下标|None, why)。"""
+        """开包：一次 Choice 问"对当前构筑最有价值的一张"。返回 (下标|None, why)。
+
+        无安全用法的卡（NO_BUY，如死亡/恶灵等）不进入候选（保留原始下标映射），
+        全被滤掉则跳过整包。
+        """
         pack_cards = gs.get("pack", {}).get("cards", [])
-        if not pack_cards:
-            return None, "空包跳过"
+        entries = [(i, c) for i, c in enumerate(pack_cards)
+                   if c.get("key") not in NO_BUY]
+        if not entries:
+            return None, "包内无安全可选卡 → 跳过"
         state_text = serialize(gs)
-        criteria = {f"p{i}": card_name(c) for i, c in enumerate(pack_cards)}
+        criteria = {f"p{i}": card_name(c) for i, c in entries}
         try:
             resp = self.ask(state_text, {
                 "pick": _choice("开包选择:对当前构筑(小丑/牌型等级/商店经济)最有价值的一张是", criteria),

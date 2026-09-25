@@ -5,7 +5,7 @@ from itertools import combinations
 
 from rules import (boss_rules, effective_hand_levels, is_debuffed,
                    legal_hand_types, most_played_hand)
-from scoring import evaluate_hand, rule_flags, score_play
+from scoring import evaluate_hand, mods, rule_flags, score_play
 
 
 def all_plays(hand_cards: list[dict], rules: dict,
@@ -99,11 +99,23 @@ def best_play(gamestate: dict) -> dict:
 
 
 def best_discard(gs: dict) -> list[int]:
-    """弃牌策略：打不过时保住最优组合的"方向"，弃掉边缘牌（最多5张）。"""
+    """弃牌策略：保住最优组合"方向"，弃掉边缘牌（最多5张）。
+
+    持有价值牌优先保留（wiki 魔典原则）：钢牌在手即 ×1.5 倍率（永不弃）、
+    金牌每回合 +$3（方向牌不足时才可让位）。
+    """
     hand_cards = gs["hand"]["cards"]
     discards_left = gs.get("round", {}).get("discards_left", 0)
     if discards_left <= 0 or len(hand_cards) <= 5:
         return []
+
+    def held_value(cd) -> str | None:
+        m = mods(cd)
+        if "STEEL" in m:
+            return "steel"
+        if "GOLD" in m:
+            return "gold"
+        return None
 
     bp = best_play(gs)
     keep = set(bp["indices"])
@@ -118,10 +130,25 @@ def best_discard(gs: dict) -> list[int]:
     for i, cd in enumerate(hand_cards):
         if i in keep:
             continue
+        hv = held_value(cd)
+        if hv == "steel":
+            keep.add(i)          # 钢牌：在手 ×1.5 倍率，永不弃
+            continue
+        if hv == "gold":
+            keep.add(i)          # 金牌：每回合 +$3，优先保留
+            continue
         if keep_suit and cd["value"]["suit"] == keep_suit:
             keep.add(i)
         elif keep_rank and cd["value"]["rank"] == keep_rank:
             keep.add(i)
+
+    # 全保住凑不够弃牌数时，金牌可让位（钢牌绝不弃）
+    while len([i for i in range(len(hand_cards)) if i not in keep]) < 1:
+        golds = [i for i in keep if i not in bp["indices"]
+                 and held_value(hand_cards[i]) == "gold"]
+        if not golds:
+            break
+        keep.discard(golds[0])
 
     discard = [i for i in range(len(hand_cards)) if i not in keep][:5]
     return discard

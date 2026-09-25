@@ -103,6 +103,10 @@ def run(seed: str | None = None, deck: str = "RED", stake: str = "WHITE") -> dic
         elif state == "ROUND_EVAL":
             gs = act(bot, log, gs, "cash_out")
         elif state == "SHOP":
+            # 槽满先用：消耗牌满员时先用掉可安全使用的牌腾位，再看商店（魔典原则）
+            cons = gs.get("consumables", {})
+            if cons.get("count", 0) >= cons.get("limit", 2):
+                gs = use_policy.apply(bot, log, gs, phase="SHOP", max_uses=1)
             rerolls = 0
             fails = 0
             while gs.get("state") == "SHOP" and rerolls <= REROLL_PER_SHOP and fails < 2:

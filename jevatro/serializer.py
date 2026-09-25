@@ -39,16 +39,41 @@ def playing_card(cd: dict) -> str:
     return f"{s}({mod})" if mod else s
 
 
+TAG_VALUE = {
+    # 高价值：经济/稀有度/翻倍类（wiki 通用战略原则：跳盲只在标签值回票价时划算）
+    "DOUBLE": "高价值", "ECONOMIC": "高价值", "Rare": "高价值", "Uncommon": "较高价值",
+    "Charm": "较高价值", "Meteor": "较高价值", "Polychrome": "较高价值", "Negative": "较高价值",
+    "Standard": "一般", "Common": "一般", "Juggle": "低价值", "Money": "一般",
+    "Orbital": "看牌型", "Buffoon": "一般", "Handy": "一般", "Voucher": "较高价值",
+    "Coupon": "较高价值", "D6": "看运气", "Familiar": "一般", "Unstable": "低价值",
+}
+
+
+def _tag_value(name: str) -> str:
+    for k, v in TAG_VALUE.items():
+        if k.lower() in (name or "").lower():
+            return v
+    return ""
+
+
 def _blind_line(gs: dict) -> str:
     parts = []
+    boss_preview = ""
     for b in gs.get("blinds", {}).values():
         if not isinstance(b, dict):
             continue
         mark = {"CURRENT": "▶", "SELECT": "○", "UPCOMING": "·", "DEFEATED": "✓", "SKIPPED": "×"}.get(
             b.get("status", ""), " ")
         eff = f", 效果:{b['effect']}" if b.get("effect") else ""
-        tag = f", 跳过奖励:{b['tag_name']}" if b.get("tag_name") and b.get("type") != "BOSS" else ""
+        tag = ""
+        if b.get("tag_name") and b.get("type") != "BOSS":
+            v = _tag_value(b.get("tag_name", ""))
+            tag = f", 跳过奖励:{b['tag_name']}" + (f"({v})" if v else "")
         parts.append(f"{mark}{b['name']}({b.get('type','')}) 需{b.get('score','?')}{eff}{tag}")
+        if b.get("type") == "BOSS" and b.get("status") not in ("DEFEATED",) and b.get("effect"):
+            boss_preview = f"{b['name']}: {b['effect']}"
+    if boss_preview:
+        parts.append(f"⚠Boss预告: {boss_preview}（购买时请考虑针对性行卡）")
     return "; ".join(parts)
 
 
