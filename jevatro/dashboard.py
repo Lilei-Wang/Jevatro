@@ -302,6 +302,16 @@ PAGE = r"""<!DOCTYPE html>
   .jevt .qi{color:#9aa3b5;font-size:11.5px;display:block;
             white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .jevt .dv{font-size:12.5px}
+  .distwrap{margin-top:4px;display:flex;flex-direction:column;gap:2px}
+  .dist{display:flex;align-items:center;gap:6px;font-size:10.5px;line-height:1.3}
+  .dist span{width:58px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+             color:#9aa3b5;font-family:var(--mono);font-size:10px}
+  .dist .dbar{flex:1;height:5px;border-radius:3px;background:#232935;overflow:hidden}
+  .dist .dbar i{display:block;height:100%;background:#4a5568;border-radius:3px}
+  .dist b{min-width:30px;text-align:right;color:#7a8496;font-weight:400;
+          font-family:var(--mono);font-size:10px}
+  .dist.chosen .dbar i{background:#34d399}
+  .dist.chosen span,.dist.chosen b{color:#34d399;font-weight:700}
   .jevt .cbar{display:flex;align-items:center;gap:10px}
   .jevt .cbar .bar{flex:1;height:7px;border-radius:4px;background:#232935;overflow:hidden}
   .jevt .cbar .bar i{display:block;height:100%;border-radius:4px}
@@ -409,7 +419,7 @@ PAGE = r"""<!DOCTYPE html>
       <div class="jevbox">
         <table class="jevt" id="jevTable">
           <thead><tr id="decCols"><th style="width:64px">时间</th><th>题目</th>
-            <th style="width:180px">决策</th><th style="width:160px">置信度</th></tr></thead>
+            <th style="width:250px">决策（含全选项分布）</th><th style="width:150px">置信度</th></tr></thead>
           <tbody id="jevRows"><tr><td colspan="4" class="jempty">暂无 Jev 决策</td></tr></tbody>
         </table>
       </div>
@@ -500,7 +510,7 @@ async function renderRun(){
   document.getElementById('decTitle').textContent=isLLM?'LLM 决策明细':'Jev 决策明细';
   document.getElementById('decCols').innerHTML=isLLM?
     '<th style="width:64px">时间</th><th>决策</th><th>理由</th><th style="width:150px">延迟/令牌</th>':
-    '<th style="width:64px">时间</th><th>题目</th><th style="width:180px">决策</th><th style="width:160px">置信度</th>';
+    '<th style="width:64px">时间</th><th>题目</th><th style="width:250px">决策（含全选项分布）</th><th style="width:150px">置信度</th>';
   const acts=recs.filter(r=>r.kind==='action');
   const jevs=recs.filter(r=>r.kind==='jev');
   const llms=recs.filter(r=>r.kind==='llm');
@@ -558,7 +568,7 @@ function renderJevDecisions(recs, isLLM){
       `<tr class="${idx===0?'newest':''}">
         <td class="tt">${d.t}秒${idx===0?'<span class="badge-new">最新</span>':''}</td>
         <td title="${esc(String(d.q))}"><span class="qk">${esc(d.k)}</span><span class="qi">${esc(String(d.q))}</span></td>
-        <td class="dv" title="${esc(ansText(d.a))}">${ansOf(d.a)}</td>
+        <td class="dv" title="${esc(ansText(d.a))}">${ansOf(d.a)}${distHtml(d.a)}</td>
         <td>${d.c!=null?`<div class="cbar"><div class="bar"><i style="width:${Math.round(d.c*100)}%;
           background:${d.c>=0.6?'#34d399':d.c>=0.35?'#fbbf24':'#f87171'}"></i></div><b>${(+d.c).toFixed(2)}</b></div>`
           :'<span style="color:#5f6878">无信号</span>'}</td></tr>`).join('');
@@ -652,6 +662,22 @@ function ansText(a){
   if(a.type==='choice')return`选择 ${a.choice} · 置信度 ${a.confidence!=null?(+a.confidence).toFixed(2):'无'}`;
   if(a.type==='score')return`打分 ${(+a.score).toFixed(2)}/4 · 置信度 ${a.confidence!=null?(+a.confidence).toFixed(2):'无'}`;
   return JSON.stringify(a).slice(0,60);
+}
+// 全选项概率分布：a.probabilities = {选项: 概率}，选中/接近打分值的绿色高亮
+function distHtml(a){
+  const p=a&&a.probabilities;
+  if(!p||typeof p!=='object')return'';
+  const chosen=a.type==='choice'?a.choice:
+    (a.type==='score'?''+Math.round(a.score):null);
+  const rows=Object.entries(p)
+    .sort((x,y)=>y[1]-x[1]).slice(0,6)
+    .map(([k,v])=>`
+      <div class="dist ${k===chosen?'chosen':''}">
+        <span>${esc(String(k))}</span>
+        <div class="dbar"><i style="width:${Math.min(100,Math.round(v*100))}%"></i></div>
+        <b>${Math.round(v*100)}%</b>
+      </div>`).join('');
+  return `<div class="distwrap">${rows}</div>`;
 }
 
 function evHtml(r,i){
