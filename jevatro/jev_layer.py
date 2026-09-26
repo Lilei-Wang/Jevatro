@@ -267,9 +267,10 @@ class JevLayer:
         plan = []
         card_buy_planned = False
         voucher_buy_planned = False
-        # 迭代8教训：超息时全局降阈值(0.30)是净负面——死时金币$6且ante反降,
-        # 钱砸在平庸小丑上; 囤钱的正解是买"确定性升级"(星球/好塔罗)而非泛买。
-        # 故只保留早期小丑稀缺放宽, 富裕时不降阈值(交给state经济警示让Jev自己权衡)
+        # 迭代8教训：超息全局降阈值(0.30)是净负面。
+        # 迭代13实测：溢出区间降阈值0.46同样无效（回归3.67 vs 3.83、死钱不降）——
+        # 花钱速率被"每商店1卡+1券"结构性封顶，阈值不是瓶颈。
+        # 正解：富裕时提高重掷预算（jev_bot 侧），把钱换成搜索机会。
         n_jokers = len(jokers_area.get("cards", []))
         joker_tau = 0.32 if n_jokers < 3 else BUY_VALUE_TAU
         for it in sorted(scored, key=lambda x: -x["value"]):

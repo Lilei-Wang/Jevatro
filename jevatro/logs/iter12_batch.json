@@ -1,0 +1,122 @@
+{
+ "DEMW1": {
+  "ante": 3,
+  "won": false,
+  "money": 18,
+  "n_jokers": 5
+ },
+ "DEMW2": {
+  "ante": 1,
+  "won": false,
+  "money": 5,
+  "n_jokers": 0
+ },
+ "DEMW3": {
+  "ante": 2,
+  "won": false,
+  "money": 6,
+  "n_jokers": 4
+ },
+ "DEMW4": {
+  "ante": 5,
+  "won": false,
+  "money": 35,
+  "n_jokers": 5
+ },
+ "DEMW5": {
+  "ante": 3,
+  "won": false,
+  "money": 13,
+  "n_jokers": 5
+ },
+ "DEMW6": {
+  "ante": 4,
+  "won": false,
+  "money": 15,
+  "n_jokers": 5
+ },
+ "DEMW7": {
+  "ante": 3,
+  "won": false,
+  "money": 15,
+  "n_jokers": 5
+ },
+ "DEMW8": {
+  "ante": 2,
+  "won": false,
+  "money": 6,
+  "n_jokers": 2
+ },
+ "DEMW9": {
+  "ante": 4,
+  "won": false,
+  "money": 10,
+  "n_jokers": 5
+ },
+ "DEMW10": {
+  "ante": 2,
+  "won": false,
+  "money": 4,
+  "n_jokers": 1
+ },
+ "DEMW11": {
+  "ante": 5,
+  "won": false,
+  "money": 11,
+  "n_jokers": 5
+ },
+ "DEMW12": {
+  "ante": 2,
+  "won": false,
+  "money": 4,
+  "n_jokers": 2
+ },
+ "DEMW13": {
+  "ante": 1,
+  "won": false,
+  "money": 7,
+  "n_jokers": 1
+ },
+ "DEMW14": {
+  "ante": 3,
+  "won": false,
+  "money": 9,
+  "n_jokers": 5
+ },
+ "DEMW15": {
+  "ante": 2,
+  "won": false,
+  "money": 4,
+  "n_jokers": 4
+ },
+ "DEMW16": {
+  "ante": 4,
+  "won": false,
+  "money": 10,
+  "n_jokers": 5
+ },
+ "DEMW17": {
+  "ante": 2,
+  "won": false,
+  "money": 5,
+  "n_jokers": 3
+ },
+ "DEMW18": {
+  "ante": 1,
+  "won": false,
+  "money": 5,
+  "n_jokers": 1
+ },
+ "DEMW19": {
+  "ante": 4,
+  "won": false,
+  "money": 25,
+  "n_jokers": 5
+ },
+ "DEMW20": {
+  "ante": 4,
+  "won": false,
+  "money": 60,
+  "n_jokers": 5
+ }
+}

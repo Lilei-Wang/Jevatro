@@ -109,6 +109,8 @@ def run(seed: str | None = None, deck: str = "RED", stake: str = "WHITE") -> dic
                 gs = use_policy.apply(bot, log, gs, phase="SHOP", max_uses=1)
             rerolls = 0
             fails = 0
+            # 迭代13实测回退：富裕时重掷预算加倍无效（死钱不降，DEMW4反-1）——
+            # 预算不是瓶颈，Jev 的重掷 Noul 判断（~0.5 阈值）本身保守，加了预算也不掷
             while gs.get("state") == "SHOP" and rerolls <= REROLL_PER_SHOP and fails < 2:
                 sig = _shop_sig(gs)
                 plan = jev.shop_plan(gs)
