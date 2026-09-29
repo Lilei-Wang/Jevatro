@@ -376,6 +376,70 @@ PAGE = r"""<!DOCTYPE html>
   .copy:hover{color:var(--txt);border-color:#3a4250}
   .empty{color:var(--muted);text-align:center;padding:36px 0;font-size:13px}
   #hHint{font-size:11px;color:var(--green);margin-left:6px;font-family:var(--mono)}
+  /* —— 决策过程漏斗（录屏主视图）—— */
+  .funnel{display:flex;flex-direction:column;gap:11px}
+  .fcard{background:#10141a;border:1px solid #232935;border-radius:11px;padding:12px 14px}
+  .fhead{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .ftag{font-size:10px;font-weight:800;letter-spacing:1px;border-radius:5px;padding:2px 8px}
+  .ftag.shop{background:#0d2b1d;color:var(--green)}
+  .ftag.blind{background:#15303b;color:#7fd6ff}
+  .ftag.pack{background:#33200d;color:#fbbf24}
+  .ftag.reroll{background:#2a1a33;color:#c792ea}
+  .fsub{color:var(--muted);font-size:11.5px}
+  .fsub b{color:var(--txt)}
+  .flab{font-size:10.5px;color:var(--dim);letter-spacing:1px;margin:10px 0 5px}
+  .archrow{display:flex;gap:6px;flex-wrap:wrap}
+  .archopt{flex:1;min-width:118px;background:#151920;border:1px solid #2a303c;border-radius:8px;
+    padding:5px 9px;font-size:11px;position:relative;overflow:hidden}
+  .archopt .ab{position:absolute;left:0;top:0;bottom:0;background:rgba(96,165,250,.14);z-index:0;
+    border-radius:8px}
+  .archopt span{position:relative;z-index:1;color:#9aa3b5}
+  .archopt b{position:relative;z-index:1;float:right;font-family:var(--mono);font-size:10.5px;color:#7a8496}
+  .archopt.chosen{border-color:#34d399;box-shadow:0 0 9px rgba(52,211,153,.22)}
+  .archopt.chosen span{color:#34d399;font-weight:700}
+  .archopt.chosen b{color:#34d399}
+  .items{display:grid;grid-template-columns:repeat(auto-fill,minmax(252px,1fr));gap:9px}
+  .icard{background:#151920;border:1px solid #2a303c;border-radius:10px;padding:9px 11px}
+  .icard.bought{border-color:#2f9e63;background:rgba(52,211,153,.06);
+    box-shadow:0 0 9px rgba(52,211,153,.14)}
+  .icard .itop{display:flex;justify-content:space-between;gap:6px;align-items:baseline}
+  .icard .iname{font-size:11.5px;color:#e8ecf3;font-family:var(--mono);overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap;max-width:170px}
+  .icard .iprice{color:var(--amber);font-family:var(--mono);font-size:11.5px;white-space:nowrap}
+  .icard .itail{font-size:9.5px;color:var(--dim);font-family:var(--mono);overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap;margin-top:1px}
+  .dimrow{display:flex;align-items:center;gap:7px;margin-top:5px;font-size:10.5px}
+  .dimrow span{width:30px;color:#9aa3b5;flex-shrink:0}
+  .dimrow .dbar2{flex:1;height:6px;background:#1e232b;border-radius:3px;overflow:hidden}
+  .dimrow .dbar2 i{display:block;height:100%;background:#60a5fa;border-radius:3px}
+  .dimrow em{min-width:86px;text-align:right;color:#7a8496;font-style:normal;
+    font-family:var(--mono);font-size:9.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .dimrow b{min-width:26px;text-align:right;color:#aeb8ca;font-family:var(--mono);
+    font-size:10.5px;font-weight:600}
+  .vrow{margin-top:8px;padding-top:7px;border-top:1px dashed #2a303c}
+  .vbar{position:relative;height:15px;background:#1e232b;border-radius:8px;overflow:hidden}
+  .vbar .fill{position:absolute;left:0;top:0;bottom:0;border-radius:8px}
+  .vbar .tau{position:absolute;top:0;bottom:0;width:2px;background:#fbbf24;z-index:2;
+    box-shadow:0 0 5px rgba(251,191,36,.8)}
+  .vlab{display:flex;justify-content:space-between;font-size:10.5px;color:#9aa3b5;margin-top:3px}
+  .vlab b{font-family:var(--mono);font-size:12px}
+  .outb{display:inline-block;padding:2px 9px;border-radius:9px;font-size:10.5px;font-weight:700;
+    margin-left:8px}
+  .outb.buy{background:rgba(52,211,153,.16);color:#34d399}
+  .outb.skip{background:rgba(148,163,184,.13);color:#9aa3b5}
+  .outb.poor{background:rgba(251,191,36,.13);color:#fbbf24}
+  .noulrow{display:flex;align-items:center;gap:12px;margin-top:6px}
+  .noulrow .nl{font-size:11.5px;color:#9aa3b5;width:150px;flex-shrink:0}
+  .noulbar{position:relative;flex:1;height:17px;background:#1e232b;border-radius:9px;overflow:hidden}
+  .noulbar .fill{position:absolute;left:0;top:0;bottom:0;border-radius:9px}
+  .noulbar .thr{position:absolute;top:0;bottom:0;width:2px;background:#fbbf24;z-index:2;
+    box-shadow:0 0 5px rgba(251,191,36,.8)}
+  .noulrow b{font-family:var(--mono);font-size:13px;min-width:44px;text-align:right}
+  .noulrow .verdict{font-size:11.5px;font-weight:700}
+  details.rawq{margin-top:13px}
+  details.rawq summary{cursor:pointer;font-size:11.5px;color:var(--dim);
+    letter-spacing:1px;padding:6px 0}
+  details.rawq summary:hover{color:var(--muted)}
 </style>
 </head>
 <body>
@@ -411,18 +475,21 @@ PAGE = r"""<!DOCTYPE html>
     </div>
   </div>
 
-  <!-- Jev 决策明细（逐题 + 置信度） -->
+  <!-- 决策过程（漏斗可视化 + 逐题明细） -->
   <div>
     <div class="panel">
-      <div class="ptitle"><span class="no">03</span><b id="decTitle">Jev 决策明细</b>
-        <span class="live" id="jStat">逐题置信度</span></div>
+      <div class="ptitle"><span class="no">03</span><b id="decTitle">决策过程</b>
+        <span class="live" id="jStat">打分 → 加权 → 阈值 → 动作</span></div>
       <div class="jstat" id="jStatBar"></div>
       <div class="jevbox">
+        <div class="funnel" id="funnel"><div class="jempty">暂无决策</div></div>
+        <details class="rawq"><summary>▸ 逐题原始明细（全部题目 · 选项概率 · 置信度）</summary>
         <table class="jevt" id="jevTable">
           <thead><tr id="decCols"><th style="width:64px">时间</th><th>题目</th>
             <th style="width:250px">决策（含全选项分布）</th><th style="width:150px">置信度</th></tr></thead>
           <tbody id="jevRows"><tr><td colspan="4" class="jempty">暂无 Jev 决策</td></tr></tbody>
         </table>
+        </details>
       </div>
     </div>
   </div>
@@ -489,9 +556,10 @@ const ZH_VAL={play:'出牌',discard:'弃牌',buy:'购买',sell:'卖出',skip:'�
   true:'是',false:'否'};
 // 决策明细中文化：题目键名 + 选项标签
 const ZH_OPT={pair:'对子',flush:'同花',straight:'顺子',highcard:'高牌',balanced:'均衡',
-  synergy:'协同',scaling:'成长',economy:'经济',immediate:'战力'};
+  synergy:'协同',scaling:'成长',economy:'性价比',immediate:'战力'};
 const ZH_QNAME={archetype:'构筑方向',skip:'跳盲判断',skip_better:'跳盲判断',
-  sell_which:'卖牌选择',pick:'开包选择',reroll_worth:'重掷判断',buy:'购买判断'};
+  sell_which:'卖牌选择',pick:'开包选择',reroll_worth:'重掷判断',buy:'购买判断',
+  can_pass:'过关判断',shelf_has_goods:'货架存在性'};
 function zhQuestion(k){
   if(ZH_QNAME[k])return ZH_QNAME[k];
   const m=String(k).match(/^(item|voucher|j|p)(\d+)(?:__(\w+))?$/);
@@ -529,7 +597,7 @@ async function renderRun(){
   const mb=document.getElementById('modeBadge');
   mb.textContent=isLLM?'DeepSeek-LLM 大脑':'Jev 大脑';
   mb.className='mbadge '+(isLLM?'llm':'jev');
-  document.getElementById('decTitle').textContent=isLLM?'LLM 决策明细':'Jev 决策明细';
+  document.getElementById('decTitle').textContent=isLLM?'LLM 决策过程':'Jev 决策过程';
   document.getElementById('decCols').innerHTML=isLLM?
     '<th style="width:64px">时间</th><th>决策</th><th>理由</th><th style="width:150px">延迟/令牌</th>':
     '<th style="width:64px">时间</th><th>题目</th><th style="width:250px">决策（含全选项分布）</th><th style="width:150px">置信度</th>';
@@ -568,6 +636,7 @@ async function renderRun(){
 // —— 决策明细：Jev 局逐题+置信度 / LLM 局逐次决策+理由，最新在最上 ——
 function renderJevDecisions(recs, isLLM){
   if(isLLM){renderLLMDecisions(recs);return;}
+  document.getElementById('funnel').innerHTML=buildFunnel(recs);
   const rows=[];
   let confSum=0,confN=0,hiN=0;
   for(const r of recs){
@@ -632,6 +701,8 @@ async function renderCompare(){
 }
 // —— LLM 决策明细：每次调用一行（时间/决策/理由/延迟与令牌） ——
 function renderLLMDecisions(recs){
+  document.getElementById('funnel').innerHTML=
+    '<div class="jempty">LLM 局：决策漏斗仅适用于 Jev（结构化打分），LLM 明细见下方折叠表</div>';
   const rows=[];
   let latSum=0,tin=0,tout=0,fails=0;
   for(const r of recs){
@@ -689,8 +760,16 @@ function ansText(a){
 const RUBRIC_ZH={
   synergy:['与现有构筑零交互甚至冲突','略相关但方向不符','中性填充','明确加强现有方向','核心拼图,改变战力曲线'],
   scaling:['无成长','一次性收益','轻微成长','每轮稳定成长','复利式成长'],
-  economy:['纯花钱无回报','略亏','回本','产出大于成本','直接利息引擎'],
+  economy:['明显溢价完全不值','偏贵','价格与价值相称','物有所值','白捡级性价比'],
   immediate:['对得分完全无助','略有帮助','有一定帮助','显著提升近期得分','立刻改变能否过关']};
+// 与后端 jev_layer.WEIGHTS/BUY_VALUE_TAU 保持同步（决策漏斗前端复算用）
+const WEIGHTS={default:{synergy:.40,scaling:.25,economy:.15,immediate:.20},
+  flush:{synergy:.50,scaling:.25,economy:.10,immediate:.15},
+  pair:{synergy:.45,scaling:.25,economy:.12,immediate:.18},
+  highcard:{synergy:.50,scaling:.30,economy:.08,immediate:.12},
+  straight:{synergy:.45,scaling:.25,economy:.12,immediate:.18},
+  balanced:{synergy:.40,scaling:.25,economy:.15,immediate:.20}};
+const BLEND=0.5, TAU=0.40, TAU_EARLY=0.32;
 function dimOf(k){const m=String(k).match(/__(\w+)$/);return m?m[1]:null;}
 function scoreLabel(dim,val){
   const rub=RUBRIC_ZH[dim];
@@ -736,7 +815,7 @@ function evHtml(r,i){
       <span class="why">${archOf(r)}</span>`;
     const qs=Object.entries(r.answers||{}).map(([k,a])=>`
       <div class="q"><div class="k">${k}</div>
-        <div class="v">${ansOf(a)}</div>
+        <div class="v">${ansOf(a,dimOf(k))}</div>
         ${a.confidence!=null?`<div class="bar"><i style="width:${Math.round(a.confidence*100)}%"></i></div>`:''}
         <div class="p">${esc((r.questions||{})[k]||'').slice(0,76)}</div></div>`).join('');
     body=copyBtn(r)+`<div class="lbl">发送给 Jev 的局面原文</div>
@@ -785,7 +864,7 @@ function zhAct(m){return({play:'出牌',discard:'弃牌',buy:'购买',sell:'卖�
   select:'选盲',use:'使用',reroll:'重掷',pack:'开包',cash_out:'结算',
   next_round:'进入下轮',start:'开局',menu:'回主菜单'})[m]||m}
 function zhSys(k){return({game_start:'开局',frozen:'冻结',llm_error:'LLM失败'})[k]||k}
-function ansOf(a){
+function ansOf(a, dim){
   if(!a)return'?';
   if(a.type==='noul')return`概率 = <b>${(+a.noul).toFixed(2)}</b>`;
   if(a.type==='choice')return`选择 → <b>${zhOption(a.choice)}</b>`;
@@ -794,6 +873,145 @@ function ansOf(a){
     return`打分 = <b>${(+a.score).toFixed(2)}</b>/4${lab?`（${lab}）`:''}`;
   }
   return esc(JSON.stringify(a)).slice(0,60);
+}
+// =========================================================================
+// 决策过程漏斗：把每次 Jev 调用重演为 打分→加权→阈值→动作 的可视化
+// =========================================================================
+function itemKeyOf(qText){                     // 题面提取卡牌 key（买/没买的对照依据）
+  const m=String(qText||'').match(/商品\[([a-z0-9_]+)[,（(]/);
+  return m?m[1]:'';
+}
+function itemMeta(qText){                      // 题面提取 名称+售价
+  const m=String(qText||'').match(/^商品\[(.+), \$(\d+)\]/);
+  if(!m)return{name:'?',price:0,tail:''};
+  const parts=m[1].split(':');
+  return{name:parts[0].trim(),price:+m[2],tail:(parts[1]||'').trim()};
+}
+function moneyOf(r){                           // state 文本提取金币
+  const m=String(r.state||'').match(/金币\$(\d+)/);
+  return m?+m[1]:null;
+}
+function blendW(arch){                         // 方向权重与 default 各半（与后端一致）
+  const wA=WEIGHTS[arch]||WEIGHTS.default, wD=WEIGHTS.default;
+  return Object.fromEntries(Object.keys(wD).map(k=>[k,(1-BLEND)*wA[k]+BLEND*wD[k]]));
+}
+function distBars(a){                          // Choice 题的全选项概率条
+  const p=a&&a.probabilities; if(!p)return'';
+  const chosen=a.choice;
+  return '<div class="archrow">'+Object.entries(p).sort((x,y)=>y[1]-x[1]).slice(0,8)
+    .map(([k,v])=>`<div class="archopt ${k===chosen?'chosen':''}">
+      <i class="ab" style="width:${Math.min(100,Math.round(v*100))}%"></i>
+      <span>${esc(zhOption(k))}</span><b>${Math.round(v*100)}%</b></div>`).join('')+'</div>';
+}
+function noulGauge(a,thr,verdictHi,verdictLo){ // Noul 题仪表（阈值黄线+判定）
+  if(!a||a.noul==null)return'';
+  const n=+a.noul, hi=n>=thr;
+  const col=hi?'#34d399':'#f87171';
+  return `<div class="noulrow">
+    <div class="noulbar"><i class="fill" style="width:${Math.round(n*100)}%;background:${col}"></i>
+      <i class="thr" style="left:${Math.round(thr*100)}%"></i></div>
+    <b style="color:${col}">${n.toFixed(2)}</b>
+    <span class="verdict" style="color:${col}">${hi?verdictHi:verdictLo}</span></div>`;
+}
+function buildFunnel(recs){
+  const cards=[];
+  const acts=recs.filter(r=>r.kind==='action');
+  for(const r of recs){
+    if(r.kind!=='jev')continue;
+    const qs=r.questions||{}, as=r.answers||{};
+    const itemKeys=Object.keys(qs).filter(k=>/^item\d+__/.test(k));
+    if(itemKeys.length){cards.push(shopCard(r,qs,as,acts,itemKeys));continue;}
+    if(as.pick){cards.push(packCard(r,qs,as,acts));continue;}
+    if(as.can_pass||as.skip_better){cards.push(blindCard(r,qs,as,acts));continue;}
+    if(as.shelf_has_goods||as.reroll_worth){cards.push(rerollCard(r,qs,as,acts));}
+  }
+  return cards.slice(-40).reverse().join('')||'<div class="jempty">暂无决策过程</div>';
+}
+function shopCard(r,qs,as,acts,itemKeys){
+  const archA=as.archetype, arch=archA&&WEIGHTS[archA.choice]?archA.choice:'default';
+  const w=blendW(arch);
+  const money=moneyOf(r);
+  // 商品分组：itemN → 四维答案
+  const groups={};
+  for(const k of itemKeys){
+    const m=k.match(/^(item\d+)__(\w+)$/);
+    if(!m)continue;
+    (groups[m[1]]=groups[m[1]]||{})[m[2]]=as[k];
+  }
+  const itemHtml=Object.entries(groups).map(([slot,dims])=>{
+    const qText=qs[slot+'__synergy']||'';
+    const meta=itemMeta(qText), key=itemKeyOf(qText);
+    let v=0;
+    const dimRows=['synergy','scaling','economy','immediate'].map(dim=>{
+      const a=dims[dim];
+      if(!a||a.score==null)return '';
+      const norm=Math.min(a.score,3)/3;
+      v+=w[dim]*norm;
+      const lab=scoreLabel(dim,a.score);
+      return `<div class="dimrow"><span>${ZH_OPT[dim]||dim}</span>
+        <div class="dbar2"><i style="width:${Math.round(norm*100)}%"></i></div>
+        <em title="${esc(lab||'')}">${esc(lab||'')}</em><b>${(+a.score).toFixed(1)}</b></div>`;
+    }).join('');
+    const bought=acts.some(a=>a.t>=r.t&&a.method==='buy'&&
+      String((a.extra||{}).why||((a.params||{}).extra||{}).why||'').startsWith(key+' '));
+    const afford=(money==null||meta.price<=money);
+    const pass=v>=TAU;
+    const out=bought?'<span class="outb buy">✓ 已购买</span>'
+      :!afford?'<span class="outb poor">钱不够</span>'
+      :pass?'<span class="outb skip">过线未执行</span>'
+      :'<span class="outb skip">未过线</span>';
+    const vc=bought?'#34d399':pass?'#60a5fa':'#4a5568';
+    return `<div class="icard ${bought?'bought':''}">
+      <div class="itop"><span class="iname" title="${esc(meta.name)}">${esc(meta.name)}</span>
+        <span class="iprice">$${meta.price}</span></div>
+      <div class="itail" title="${esc(meta.tail)}">${esc(meta.tail)}</div>
+      ${dimRows}
+      <div class="vrow"><div class="vbar">
+        <i class="fill" style="width:${Math.min(100,Math.round(v/0.9*100))}%;background:${vc}"></i>
+        <i class="tau" style="left:${Math.round(TAU/0.9*100)}%"></i></div>
+        <div class="vlab"><span>综合价值（权重混合方向=${zhOption(arch)}）${out}</span>
+          <b style="color:${vc}">${v.toFixed(3)}</b></div></div></div>`;
+  }).join('');
+  const rr=as.shelf_has_goods||as.reroll_worth;
+  const rrHtml=rr?`<div class="flab">重掷判断${as.shelf_has_goods?'（存在性反转：货架没有值得买的货 → 掷）':'（旧版价值题）'}</div>
+    ${as.shelf_has_goods?noulGauge(as.shelf_has_goods,0.45,'货架有货 · 不掷','判定无货 → 重掷')
+    :noulGauge(as.reroll_worth,0.5,'值得重掷','不重掷')}`:'';
+  return `<div class="fcard"><div class="fhead">
+    <span class="ftag shop">商店决策</span>
+    <span class="fsub"><b>${Object.keys(groups).length}</b> 件商品 · <i>${r.latency}秒</i>
+    ${archA?` · 方向判定 → <b>${zhOption(archA.choice||'')}</b>`:''}</span></div>
+    ${archA?`<div class="flab">构筑方向（全选项概率 · 绿框为 Jev 选择）</div>${distBars(archA)}`:''}
+    <div class="flab">商品四维打分 → 加权综合 → 阈值线 0.40（黄线；早局小丑 0.32）</div>
+    <div class="items">${itemHtml}</div>${rrHtml}</div>`;
+}
+function blindCard(r,qs,as,acts){
+  const a=as.can_pass||as.skip_better, isNew=!!as.can_pass;
+  const act=acts.find(x=>x.t>=r.t&&(x.method==='select'||x.method==='skip'));
+  const skipped=!!(act&&act.method==='skip');
+  return `<div class="fcard"><div class="fhead">
+    <span class="ftag blind">盲注决策</span>
+    <span class="fsub">${isNew?'战力能否过关（存在性问法）':'跳过是否更优（旧版问法）'} · <i>${r.latency}秒</i>
+    ${skipped?'<span class="outb buy">→ 已跳过</span>':'<span class="outb skip">→ 已挑战</span>'}</span></div>
+    <div class="flab">${esc(String(qs[isNew?'can_pass':'skip_better']||'').slice(0,90))}</div>
+    ${isNew?noulGauge(a,0.45,'可过关 → 挑战','难过关 → 跳过')
+           :noulGauge(a,0.65,'不跳 · 挑战','跳过（需>0.65，实测永不达）')}</div>`;
+}
+function packCard(r,qs,as,acts){
+  const a=as.pick;
+  return `<div class="fcard"><div class="fhead">
+    <span class="ftag pack">开包选择</span>
+    <span class="fsub">选择 → <b>${zhOption(a.choice)}</b> · <i>${r.latency}秒</i></span></div>
+    <div class="flab">全选项概率（绿框为 Jev 选择）</div>${distBars(a)}</div>`;
+}
+function rerollCard(r,qs,as,acts){
+  const a=as.shelf_has_goods||as.reroll_worth;
+  const rolled=acts.some(x=>x.t>=r.t&&x.method==='reroll');
+  return `<div class="fcard"><div class="fhead">
+    <span class="ftag reroll">重掷判断</span>
+    <span class="fsub">${rolled?'<span class="outb buy">→ 已重掷</span>':'<span class="outb skip">→ 未重掷</span>'}
+     · <i>${r.latency}秒</i></span></div>
+    ${as.shelf_has_goods?noulGauge(a,0.45,'货架有货 · 不掷','判定无货 → 重掷')
+                        :noulGauge(a,0.5,'值得重掷','不重掷')}</div>`;
 }
 function archOf(r){const a=r.answers&&r.answers.archetype;
   return a&&a.choice?`方向判定: ${a.choice}`:''}
