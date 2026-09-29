@@ -45,46 +45,68 @@ class LlmLayer:
         self._skip_ante: dict[int, int] = {}   # 每个 ante 的跳盲次数护栏
 
     # ------------------------------------------------------------------
-    def _chat(self, user: str, max_tokens: int = 2000) -> str:
-        body = {
-            "model": self.model,
-            "messages": [{"role": "system", "content": SYSTEM},
-                         {"role": "user", "content": user}],
-            "max_tokens": max_tokens,
-            "temperature": 0.2,
-        }
-        req = urllib.request.Request(
-            self.base + "/chat/completions",
-            data=json.dumps(body).encode(),
-            headers={"Authorization": f"Bearer {self.key}",
-                     "Content-Type": "application/json"},
-        )
-        t0 = time.time()
-        with urllib.request.urlopen(req, timeout=120) as r:
-            d = json.loads(r.read())
-        dt = time.time() - t0
-        self.calls += 1
-        self.total_latency += dt
-        u = d.get("usage", {})
-        in_t = u.get("prompt_tokens", 0)
-        out_t = u.get("completion_tokens", 0)
-        # DeepSeek 返回缓存命中/未命中拆分；其他兼容后端缺省按全部未命中计
-        hit = u.get("prompt_cache_hit_tokens", 0) or 0
-        miss = u.get("prompt_cache_miss_tokens", in_t - hit) or 0
-        if hit + miss == 0:
-            miss = in_t
-        cost = pricing.llm_cost_usd(miss, hit, out_t, model=self.model)
-        self.in_tokens += in_t
-        self.out_tokens += out_t
-        self.in_hit_tokens += hit
-        self.in_miss_tokens += miss
-        self.cost_usd += cost
-        if self.log:
-            self.log.llm(model=self.model, prompt=user, reply=d["choices"][0]["message"]["content"],
-                         latency=round(dt, 2), in_tokens=in_t,
-                         out_tokens=out_t, in_hit_tokens=hit, in_miss_tokens=miss,
-                         cost_usd=cost)
-        return d["choices"][0]["message"]["content"]
+    def _chat(self, user: str, max_tokens: int = 3000) -> str:
+        """思考耗尽治理：content 空时从 reasoning_content 尾部提取 JSON 草稿；
+        仍无输出则预算翻倍重试一次（两轮都空才回退）——空回复同样计费，不能白扔。"""
+        for attempt in range(2):
+            budget = max_tokens if attempt == 0 else max_tokens * 2
+            body = {
+                "model": self.model,
+                "messages": [{"role": "system", "content": SYSTEM},
+                             {"role": "user", "content": user}],
+                "max_tokens": budget,
+                "temperature": 0.2,
+            }
+            req = urllib.request.Request(
+                self.base + "/chat/completions",
+                data=json.dumps(body).encode(),
+                headers={"Authorization": f"Bearer {self.key}",
+                         "Content-Type": "application/json"},
+            )
+            t0 = time.time()
+            with urllib.request.urlopen(req, timeout=120) as r:
+                d = json.loads(r.read())
+            dt = time.time() - t0
+            msg = (d.get("choices") or [{}])[0].get("message", {})
+            content = msg.get("content") or ""
+            src = "content"
+            if not content.strip():
+                # 思考吃满预算：content 空、思考在 reasoning_content——其末尾常已
+                # 草拟出目标 JSON，逐个候选尝试解析而不是直接放弃（费用已发生）
+                rc = msg.get("reasoning_content") or ""
+                cands = re.findall(r"\{[^{}]*\}", rc)
+                for c in reversed(cands):
+                    try:
+                        json.loads(c)
+                        content, src = c, "reasoning草稿"
+                        break
+                    except json.JSONDecodeError:
+                        continue
+                if not content and attempt == 0:
+                    continue          # 翻倍预算重试一次
+            self.calls += 1
+            self.total_latency += dt
+            u = d.get("usage", {})
+            in_t = u.get("prompt_tokens", 0)
+            out_t = u.get("completion_tokens", 0)
+            # DeepSeek 返回缓存命中/未命中拆分；其他兼容后端缺省按全部未命中计
+            hit = u.get("prompt_cache_hit_tokens", 0) or 0
+            miss = u.get("prompt_cache_miss_tokens", in_t - hit) or 0
+            if hit + miss == 0:
+                miss = in_t
+            cost = pricing.llm_cost_usd(miss, hit, out_t, model=self.model)
+            self.in_tokens += in_t
+            self.out_tokens += out_t
+            self.in_hit_tokens += hit
+            self.in_miss_tokens += miss
+            self.cost_usd += cost
+            if self.log:
+                self.log.llm(model=self.model, prompt=user, reply=content,
+                             latency=round(dt, 2), in_tokens=in_t,
+                             out_tokens=out_t, in_hit_tokens=hit, in_miss_tokens=miss,
+                             cost_usd=cost)
+            return content
+        return ""
 
     @staticmethod
     def _parse_json(text: str) -> dict | None:

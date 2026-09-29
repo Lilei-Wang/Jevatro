@@ -369,6 +369,11 @@ class JevLayer:
             ante = gs.get("ante_num")
             if self._skip_ante.get(ante, 0) >= 1:
                 return "select", "skip护栏: 本ante已跳过1盲(防连跳直冲Boss)"
+            # M7.1 早期禁跳（JEVATRO2实证：ante1跳小盲→少一轮收入/牌型升级→
+            # 护栏强制打大盲→Boss面前战力不足、$24未转化而死）——ante1-2 的
+            # 回合本身就是收入与升级机会，跳了只会让后面的盲更难打
+            if (ante or 1) <= 2:
+                return "select", "早期不跳(ante1-2回合=收入+升级机会)"
             tag = blind.get("tag_name", "奖励tag") if blind else "tag"
             tag_val = tag_value(tag)
             tag_note = f"{tag}({tag_val})" if tag_val else tag
@@ -379,6 +384,11 @@ class JevLayer:
             })
             n = resp.answers["can_pass"].noul
             if n < 0.45:
+                # M7.2 标签价值门槛：跳盲=放弃回合收入，只有高价值标签才回本
+                # （wiki 战略原则：跳盲只在标签值回票价时划算）
+                if tag_val not in ("高价值", "较高价值"):
+                    return "select", (f"jev难过关(noul={n:.2f})但标签价值不足"
+                                      f"({tag_val or '?'}) → 仍挑战")
                 self._skip_ante[ante] = self._skip_ante.get(ante, 0) + 1
                 return "skip", f"jev 判定难过关(noul={n:.2f}) → 跳过换{tag_note}"
             return "select", f"jev 判定可过关(noul={n:.2f})"
