@@ -649,7 +649,8 @@ async function renderRun(){
   const mb=document.getElementById('modeBadge');
   mb.textContent=isLLM?'DeepSeek-LLM 大脑':'Jev 大脑';
   mb.className='mbadge '+(isLLM?'llm':'jev');
-  document.getElementById('decTitle').textContent=isLLM?'LLM 决策过程':'Jev 决策过程';
+  document.getElementById('decTitle').textContent=
+    isLLM?'LLM 决策过程':(/_naive_/.test(cur||'')?'基线局（无模型决策）':'Jev 决策过程');
   document.getElementById('decCols').innerHTML=isLLM?
     '<th style="width:64px">时间</th><th>决策</th><th>理由</th><th style="width:150px">延迟/令牌</th>':
     '<th style="width:64px">时间</th><th>题目</th><th style="width:250px">决策（含全选项分布）</th><th style="width:150px">置信度</th>';
@@ -686,6 +687,15 @@ async function renderRun(){
 // —— 决策明细：Jev 局逐题+置信度 / LLM 局逐次决策+理由，最新在最上 ——
 function renderJevDecisions(recs, isLLM){
   if(isLLM){renderLLMDecisions(recs);return;}
+  if(/_naive_/.test(cur||'')){
+    document.getElementById('funnel').innerHTML=
+      '<div class="jempty">基线局：无模型决策——求解器出牌 + 朴素商店策略（见上方决策流）</div>';
+    document.getElementById('jStat').textContent='基线局';
+    document.getElementById('jStatBar').innerHTML='';
+    document.getElementById('jevRows').innerHTML=
+      '<tr><td colspan="4" class="jempty">基线局没有模型调用</td></tr>';
+    return;
+  }
   document.getElementById('funnel').innerHTML=buildFunnel(recs);
   const rows=[];
   let confSum=0,confN=0,hiN=0;
