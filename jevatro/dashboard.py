@@ -446,6 +446,11 @@ PAGE = r"""<!DOCTYPE html>
   details.rawq summary{cursor:pointer;font-size:11.5px;color:var(--dim);
     letter-spacing:1px;padding:6px 0}
   details.rawq summary:hover{color:var(--muted)}
+  /* —— LLM 决策卡 —— */
+  .fcard.llmfail{border-color:#4a2a30;background:rgba(248,113,113,.05)}
+  .lreason{margin-top:8px;background:#10141a;border:1px solid #232935;border-radius:8px;
+    padding:8px 11px;font-size:12px;color:#c6cede;line-height:1.6}
+  .lreason.bad{color:#ffb4ad;border-color:#3b2326}
 </style>
 </head>
 <body>
@@ -744,10 +749,59 @@ async function renderCompare(){
     }).join('');
   }catch(e){}
 }
+// —— LLM 决策过程卡：每次调用一张（类型/决策/推理/开销），失败态醒目 ——
+function llmCards(recs){
+  const cards=[];
+  for(const r of recs){
+    if(r.kind==='llm'){
+      let j=null,ok=true;
+      try{ j=JSON.parse((r.reply||'').match(/\{.*\}/s)?.[0]||'null'); }catch(e){ok=false;}
+      const empty=!(r.reply||'').trim();
+      const tok=`${r.in_tokens||0}入/${r.out_tokens||0}出`;
+      const cost=r.cost_usd!=null?` · $${(+r.cost_usd).toFixed(4)}`:'';
+      let head='',body='';
+      if(empty){                                  // 思考吃满配额输出为空 → 回退
+        head=`<span class="ftag blind" style="background:#3b0d0a;color:#ffb4ad">思考超限</span>
+          <span class="fsub"><i>${r.latency}秒</i> · ${tok}${cost}</span>`;
+        body=`<div class="lreason bad">思考 token 耗尽输出为空（${r.out_tokens||0}/2000）→ 已回退朴素策略</div>`;
+      }else if(j&&Array.isArray(j.buys)){
+        const items=j.buys.map(zhOption).join(' + ')||'不买';
+        head=`<span class="ftag shop">商店决策</span>
+          <span class="fsub"><i>${r.latency}秒</i> · ${tok}${cost}</span>
+          <span class="outb ${j.buys.length?'buy':'skip'}">${j.buys.length?'→ 购买 '+items:'→ 不买'}</span>`;
+        body=`<div class="lreason">${esc(zhStateText(j.reason||''))}</div>`;
+      }else if(j&&('skip' in j)){
+        head=`<span class="ftag blind">盲注决策</span>
+          <span class="fsub"><i>${r.latency}秒</i> · ${tok}${cost}</span>
+          <span class="outb ${j.skip?'buy':'skip'}">${j.skip?'→ 跳过盲注':'→ 挑战盲注'}</span>`;
+        body=`<div class="lreason">${esc(zhStateText(j.reason||''))}</div>`;
+      }else if(j&&('pick' in j)){
+        head=`<span class="ftag pack">开包选择</span>
+          <span class="fsub"><i>${r.latency}秒</i> · ${tok}${cost}</span>
+          <span class="outb buy">→ ${zhOption(j.pick)}</span>`;
+        body=`<div class="lreason">${esc(zhStateText(j.reason||''))}</div>`;
+      }else{
+        head=`<span class="ftag blind" style="background:#3b0d0a;color:#ffb4ad">解析失败</span>
+          <span class="fsub"><i>${r.latency}秒</i> · ${tok}${cost}</span>`;
+        body=`<div class="lreason bad">${esc((r.reply||'').slice(0,120)||'（空回复）')}</div>`;
+      }
+      cards.push({t:r.t,html:`<div class="fcard ${empty?'llmfail':''}"><div class="fhead">${head}</div>${body}</div>`});
+    }else if(r.kind==='action'){
+      const ex=r.extra||(r.params||{}).extra||{};
+      if(String((ex||{}).why||'').includes('naive_fallback')){
+        cards.push({t:r.t,html:`<div class="fcard llmfail"><div class="fhead">
+          <span class="ftag blind" style="background:#3b0d0a;color:#ffb4ad">回退动作</span>
+          <span class="fsub">${zhAct(r.method)} ${zhParams(r)} — LLM 输出不可用，朴素策略接管</span>
+          </div></div>`});
+      }
+    }
+  }
+  return cards.slice(-40).reverse().map(c=>c.html).join('')
+    ||'<div class="jempty">暂无 LLM 决策</div>';
+}
 // —— LLM 决策明细：每次调用一行（时间/决策/理由/延迟与令牌） ——
 function renderLLMDecisions(recs){
-  document.getElementById('funnel').innerHTML=
-    '<div class="jempty">LLM 局：决策漏斗仅适用于 Jev（结构化打分），LLM 明细见下方折叠表</div>';
+  document.getElementById('funnel').innerHTML=llmCards(recs);
   const rows=[];
   let latSum=0,tin=0,tout=0,fails=0;
   for(const r of recs){
