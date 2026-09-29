@@ -837,7 +837,7 @@ function renderLLMDecisions(recs){
       `<tr class="${idx===0?'newest':''}">
         <td class="tt">${d.t}秒${idx===0?'<span class="badge-new">最新</span>':''}</td>
         <td class="dv" style="color:#60a5fa;font-weight:600">${esc(d.decision)}</td>
-        <td class="qi" title="${esc(d.reason)}">${esc(d.reason)}</td>
+        <td title="${esc(d.reason)}"><span class="qi">${esc(d.reason)}</span></td>
         <td class="tt">${(d.lat||0).toFixed(1)}秒<span class="qi">${d.tok} tok</span></td></tr>`).join('');
   }
   document.getElementById('jStat').textContent=rows.length?`平均延迟 ${(latSum/Math.max(rows.length,1)).toFixed(1)}秒`:'LLM 决策';
