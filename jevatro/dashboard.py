@@ -228,6 +228,11 @@ PAGE = r"""<!DOCTYPE html>
     display:flex;align-items:center;justify-content:center;font-size:13px;
     border:2px dashed rgba(255,255,255,.55)}
   .lab{color:var(--muted);font-size:10.5px;letter-spacing:4px;margin-top:3px}
+  #liveBanner{background:rgba(248,113,113,.12);border-bottom:1px solid #4a2a30;
+    color:#ff9ba0;text-align:center;padding:8px;font-size:13px;font-weight:600;
+    animation:livepulse 1.6s infinite}
+  #liveBanner:hover{background:rgba(248,113,113,.2)}
+  @keyframes livepulse{0%,100%{opacity:1}50%{opacity:.55}}
   .dots{display:flex;gap:16px;margin-left:auto;font-size:12.5px;color:var(--muted);
         align-items:center}
   .dot{display:flex;align-items:center;gap:6px}
@@ -453,6 +458,9 @@ PAGE = r"""<!DOCTYPE html>
     <label><input type="checkbox" id="follow" checked>跟随最新</label>
   </div>
 </header>
+<div id="liveBanner" onclick="jumpLive()" style="display:none;cursor:pointer">
+  🔴 有对局正在进行 · 点击此处跟随直播（当前停留在历史局）
+</div>
 
 <div class="wrap">
   <!-- 决策流（全宽） -->
@@ -529,6 +537,10 @@ async function refreshRuns(){
   runs=await (await fetch('/api/runs')).json();
   const sel=document.getElementById('runSel');
   if(document.getElementById('follow').checked && runs.length) cur=runs[0].file;
+  // 直播横幅：未跟随但有进行中的局时提示一键切回（修"手动选局后钉死"的坑）
+  const lb=document.getElementById('liveBanner');
+  const liveRun=runs.find(r=>r.live);
+  lb.style.display=(liveRun && cur!==liveRun.file)?'block':'none';
   sel.innerHTML=runs.map(r=>{
     const label=`${r.config} · ${r.file.replace(/^run_.*?_\d{4}/,'')}` +
       (r.live?' ·进行中':(r.final&&r.final.won?' ·🏆通关':' ·至底注轮'+(r.final?r.final.ante:'?')));
@@ -538,6 +550,13 @@ async function refreshRuns(){
 }
 function selRun(f){cur=f;document.getElementById('follow').checked=false;
   lastCount=-1;renderRun();}
+function jumpLive(){
+  const liveRun=runs.find(r=>r.live);
+  if(!liveRun)return;
+  document.getElementById('follow').checked=true;
+  cur=liveRun.file;lastCount=-1;renderRun();
+  document.getElementById('liveBanner').style.display='none';
+}
 
 // —— 中文键名渲染：把日志记录渲染成中文可读文本（替代原始 JSON）——
 const ZH_KEY={t:'时间',kind:'类型',method:'动作',params:'参数',before:'动作前',after:'动作后',
