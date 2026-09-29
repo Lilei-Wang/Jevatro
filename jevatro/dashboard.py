@@ -446,6 +446,16 @@ PAGE = r"""<!DOCTYPE html>
   details.rawq summary{cursor:pointer;font-size:11.5px;color:var(--dim);
     letter-spacing:1px;padding:6px 0}
   details.rawq summary:hover{color:var(--muted)}
+  /* —— 求解器出牌决策卡 —— */
+  .ftag.solver{background:#1d2430;color:#9fb4d8}
+  .schip{display:inline-flex;align-items:center;justify-content:center;min-width:30px;height:24px;
+    padding:0 4px;border:1px solid #2a303c;border-radius:4px;background:#10141a;
+    font-family:var(--mono);font-size:12px;font-weight:600;margin-right:3px}
+  .schip.pick{outline:2px solid #34d399;box-shadow:0 0 8px rgba(52,211,153,.4)}
+  .schip.drop{opacity:.45;text-decoration:line-through}
+  .sline{margin-top:8px;font-size:12px;color:#c6cede}
+  .sline b{font-family:var(--mono);color:#34d399;font-size:13px}
+  .sline .fm{color:#fbbf24;font-family:var(--mono)}
   /* —— LLM 决策卡 —— */
   .fcard.llmfail{border-color:#4a2a30;background:rgba(248,113,113,.05)}
   .lreason{margin-top:8px;background:#10141a;border:1px solid #232935;border-radius:8px;
@@ -689,14 +699,15 @@ function renderJevDecisions(recs, isLLM){
   if(isLLM){renderLLMDecisions(recs);return;}
   if(/_naive_/.test(cur||'')){
     document.getElementById('funnel').innerHTML=
-      '<div class="jempty">基线局：无模型决策——求解器出牌 + 朴素商店策略（见上方决策流）</div>';
+      '<div class="jempty" style="padding:8px">基线局：无模型决策，以下为求解器（Tier 0）出牌过程</div>'
+      +mergeCards([],solverCards(recs));
     document.getElementById('jStat').textContent='基线局';
     document.getElementById('jStatBar').innerHTML='';
     document.getElementById('jevRows').innerHTML=
       '<tr><td colspan="4" class="jempty">基线局没有模型调用</td></tr>';
     return;
   }
-  document.getElementById('funnel').innerHTML=buildFunnel(recs);
+  document.getElementById('funnel').innerHTML=mergeCards(buildFunnel(recs),solverCards(recs));
   const rows=[];
   let confSum=0,confN=0,hiN=0;
   for(const r of recs){
@@ -806,12 +817,11 @@ function llmCards(recs){
       }
     }
   }
-  return cards.slice(-40).reverse().map(c=>c.html).join('')
-    ||'<div class="jempty">暂无 LLM 决策</div>';
+  return cards;
 }
 // —— LLM 决策明细：每次调用一行（时间/决策/理由/延迟与令牌） ——
 function renderLLMDecisions(recs){
-  document.getElementById('funnel').innerHTML=llmCards(recs);
+  document.getElementById('funnel').innerHTML=mergeCards(llmCards(recs),solverCards(recs));
   const rows=[];
   let latSum=0,tin=0,tout=0,fails=0;
   for(const r of recs){
@@ -1030,12 +1040,47 @@ function buildFunnel(recs){
     if(r.kind!=='jev')continue;
     const qs=r.questions||{}, as=r.answers||{};
     const itemKeys=Object.keys(qs).filter(k=>/^item\d+__/.test(k));
-    if(itemKeys.length){cards.push(shopCard(r,qs,as,acts,itemKeys));continue;}
-    if(as.pick){cards.push(packCard(r,qs,as,acts));continue;}
-    if(as.can_pass||as.skip_better){cards.push(blindCard(r,qs,as,acts));continue;}
-    if(as.shelf_has_goods||as.reroll_worth){cards.push(rerollCard(r,qs,as,acts));}
+    if(itemKeys.length){cards.push({t:r.t,html:shopCard(r,qs,as,acts,itemKeys)});continue;}
+    if(as.pick){cards.push({t:r.t,html:packCard(r,qs,as,acts)});continue;}
+    if(as.can_pass||as.skip_better){cards.push({t:r.t,html:blindCard(r,qs,as,acts)});continue;}
+    if(as.shelf_has_goods||as.reroll_worth){cards.push({t:r.t,html:rerollCard(r,qs,as,acts)});}
   }
-  return cards.slice(-40).reverse().join('')||'<div class="jempty">暂无决策过程</div>';
+  return cards;
+}
+// —— 求解器出牌/弃牌决策卡（Tier 0 也进决策过程时间线）——
+function solverCards(recs){
+  const out=[];
+  for(const r of recs){
+    if(r.kind!=='action'||(r.method!=='play'&&r.method!=='discard'))continue;
+    const b=r.before||{};
+    const hand=Array.isArray(b.hand)?b.hand:[];
+    const cards=(r.params||{}).cards||[];
+    const ex=r.extra||(r.params||{}).extra||{};
+    const sv=ex.solver||{};
+    const ctx=`ante${b.ante??'?'} r${b.round??'?'}`;
+    const chips=hand.map((k,i)=>cardChip(k).replace('class="mc',
+      `class="schip ${(r.method==='play'&&cards.includes(i))?'pick':(r.method==='discard'&&cards.includes(i))?'drop':''}`));
+    let line='';
+    if(r.method==='play'&&sv.hand){
+      line=`牌型 <b>${zhHand(sv.hand)}</b> = <span class="fm">${Math.round(sv.chips)}</span> ×
+        <span class="fm">${Math.round(sv.mult)}</span> = <b>${Math.round(sv.total)}</b> 分 · 剩${b.hands_left??'?'}手`;
+      if(ex.solver_fallback) line+=' · <span style="color:#f87171">兜底出牌</span>';
+    }else if(r.method==='discard'){
+      const m=String(ex.why||'').match(/best=([\d.]+)\/need=(\d+)/);
+      line=m?`挖牌：当前最优 <b>${m[1]}</b> / 需求 <b>${m[2]}</b> → 弃边缘牌换机会`
+            :'弃边缘牌（保最优组合方向）';
+    }
+    out.push({t:r.t,html:`<div class="fcard"><div class="fhead">
+      <span class="ftag solver">⚙ 求解器${r.method==='play'?'出牌':'弃牌'}</span>
+      <span class="fsub">${ctx}</span>
+      <span class="mcrow" style="margin-left:4px">${chips.join('')}</span>
+      </div>${line?`<div class="sline">${line}</div>`:''}</div>`});
+  }
+  return out;
+}
+function mergeCards(modelCards,solverCardsArr){
+  return [...modelCards,...solverCardsArr].sort((a,b)=>b.t-a.t).slice(0,40)
+    .map(c=>c.html).join('')||'<div class="jempty">暂无决策过程</div>';
 }
 function shopCard(r,qs,as,acts,itemKeys){
   const archA=as.archetype, arch=archA&&WEIGHTS[archA.choice]?archA.choice:'default';
