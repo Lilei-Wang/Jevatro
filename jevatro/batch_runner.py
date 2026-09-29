@@ -141,7 +141,10 @@ def _write_summary(rows: list[dict]):
         lines.append("\n> 结论判据：臂间均值差需显著大于臂内噪声才能下结论。")
     text = "\n".join(lines)
     (LOGS / "batch_summary.md").write_text(text, encoding="utf-8")
-    print("\n" + text)
+    import io as _io
+    _out = _io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    _out.write("\n" + text + "\n")
+    _out.flush()
 
 
 if __name__ == "__main__":
