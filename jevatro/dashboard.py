@@ -556,7 +556,7 @@ const ZH_VAL={play:'出牌',discard:'弃牌',buy:'购买',sell:'卖出',skip:'�
   true:'是',false:'否'};
 // 决策明细中文化：题目键名 + 选项标签
 const ZH_OPT={pair:'对子',flush:'同花',straight:'顺子',highcard:'高牌',balanced:'均衡',
-  synergy:'协同',scaling:'成长',economy:'性价比',immediate:'战力'};
+  synergy:'协同',scaling:'成长',economy:'经济',immediate:'战力'};
 const ZH_QNAME={archetype:'构筑方向',skip:'跳盲判断',skip_better:'跳盲判断',
   sell_which:'卖牌选择',pick:'开包选择',reroll_worth:'重掷判断',buy:'购买判断',
   can_pass:'过关判断',shelf_has_goods:'货架存在性'};
@@ -760,7 +760,7 @@ function ansText(a){
 const RUBRIC_ZH={
   synergy:['与现有构筑零交互甚至冲突','略相关但方向不符','中性填充','明确加强现有方向','核心拼图,改变战力曲线'],
   scaling:['无成长','一次性收益','轻微成长','每轮稳定成长','复利式成长'],
-  economy:['明显溢价完全不值','偏贵','价格与价值相称','物有所值','白捡级性价比'],
+  economy:['纯花钱无回报','略亏','回本','产出大于成本','直接利息引擎'],
   immediate:['对得分完全无助','略有帮助','有一定帮助','显著提升近期得分','立刻改变能否过关']};
 // 与后端 jev_layer.WEIGHTS/BUY_VALUE_TAU 保持同步（决策漏斗前端复算用）
 const WEIGHTS={default:{synergy:.40,scaling:.25,economy:.15,immediate:.20},
@@ -945,7 +945,7 @@ function shopCard(r,qs,as,acts,itemKeys){
     const dimRows=['synergy','scaling','economy','immediate'].map(dim=>{
       const a=dims[dim];
       if(!a||a.score==null)return '';
-      const norm=Math.min(a.score,3)/3;
+      const norm=Math.min(a.score,4)/4;
       v+=w[dim]*norm;
       const lab=scoreLabel(dim,a.score);
       return `<div class="dimrow"><span>${ZH_OPT[dim]||dim}</span>
