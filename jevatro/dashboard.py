@@ -479,7 +479,6 @@ PAGE = r"""<!DOCTYPE html>
         <div class="streambox" id="stream">
           <div class="empty">读取决策记录…</div>
         </div>
-        <button class="tobot" id="tobot" onclick="jumpBottom()">↓ 最新</button>
       </div>
     </div>
   </div>
@@ -637,9 +636,7 @@ function zhJson(v,ind){
 
 function nearBottom(el){return el.scrollHeight-el.scrollTop-el.clientHeight<48}
 function jumpBottom(){const el=document.getElementById('stream');
-  el.scrollTop=el.scrollHeight;
-  document.getElementById('tobot').style.display='none';}
-
+  el.scrollTop=0;}
 async function renderRun(){
   if(!cur)return;
   const recs=await (await fetch('/api/run/'+cur)).json();
@@ -665,9 +662,10 @@ async function renderRun(){
     `${(tin/1000).toFixed(1)}K/${(tout/1000).toFixed(1)}K`:'≈'+(jevs.length*2)+'K/0';
 
   const box=document.getElementById('stream');
-  const stick=lastCount>=0 && nearBottom(box);   // 用户本就在底部→跟随
   const openIdx=[...box.querySelectorAll('.ev.open')].map(e=>e.dataset.i);
-  box.innerHTML=recs.filter(r=>r.kind!=='boot').map((r,i)=>evHtml(r,i)).join('')
+  // 最新置顶（与右侧决策过程一致）：倒序渲染，无需跟随滚动
+  box.innerHTML=recs.filter(r=>r.kind!=='boot').slice().reverse()
+    .map((r,i)=>evHtml(r,i)).join('')
     ||'<div class="empty">（该局无记录）</div>';
   box.querySelectorAll('.ev').forEach(el=>{
     if(openIdx.includes(el.dataset.i))el.classList.add('open');
@@ -676,9 +674,6 @@ async function renderRun(){
     if(c)c.onclick=e=>{e.stopPropagation();navigator.clipboard.writeText(c.dataset.txt||'');
       c.textContent='已复制';setTimeout(()=>c.textContent='复制',1200);};
   });
-  if(stick||lastCount<0)jumpBottom();
-  else if(recs.length!==lastCount)
-    document.getElementById('tobot').style.display='block';
   lastCount=recs.length;
   renderJevDecisions(recs, isLLM);
 }
@@ -868,7 +863,7 @@ function evHtml(r,i){
       <div class="q"><div class="k">${esc(zhQuestion(k))}</div>
         <div class="v">${ansOf(a,dimOf(k))}</div>
         ${a.confidence!=null?`<div class="bar"><i style="width:${Math.round(a.confidence*100)}%"></i></div>`:''}
-        <div class="p">${esc((r.questions||{})[k]||'').slice(0,76)}</div></div>`).join('');
+        <div class="p">${esc(zhStateText((r.questions||{})[k]||'').slice(0,90))}</div></div>`).join('');
     body=copyBtn(r)+`<div class="lbl">发送给 Jev 的局面原文（中文转写）</div>
       <pre>${esc(zhStateText(r.state||''))}</pre>
       <div class="lbl">各题回答（含置信度）</div><div class="qa">${qs}</div>`;
@@ -1075,11 +1070,6 @@ function whyOf(e){
   return'';
 }
 function copyBtn(o){return `<span class="copy" data-txt="${esc(JSON.stringify(o,null,1))}">复制</span>`}
-
-document.getElementById('stream').addEventListener('scroll',e=>{
-  const el=e.target;
-  document.getElementById('tobot').style.display=nearBottom(el)?'none':'block';
-});
 
 refreshRuns();renderRun();renderCompare();
 setInterval(()=>{refreshRuns();

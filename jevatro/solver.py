@@ -65,7 +65,9 @@ def best_play(gamestate: dict) -> dict:
     for combo, name in plays:
         played = [hand_cards[i] for i in combo]
         _, scoring_idx = evaluate_hand(played, flags)
-        debuffed = {i for i in debuff_idx_global if i in combo}
+        # 弱化牌下标转换：手牌下标 → 出牌组合内下标（此前两套空间混用，
+        # 弱化牌从未真正清零 → 花色Boss下照常计分、不避讳弱化牌）
+        debuffed = {pi for pi, hi in enumerate(combo) if hi in debuff_idx_global}
         s = score_play(played, scoring_idx, name, hand_levels, jokers, ctx,
                        debuff_idx=debuffed)
         ranked.append(({"indices": list(combo), **s}))
