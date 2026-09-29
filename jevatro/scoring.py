@@ -49,15 +49,24 @@ def rule_flags(jokers: list[dict]) -> dict:
         "splash": "j_splash" in keys,            # 打出的牌全部计分
         "four_fingers": "j_four_fingers" in keys,  # 4张即可成同花/顺子
         "shortcut": "j_shortcut" in keys,        # 顺子允许1个间隔
+        "smeared": "j_smeared" in keys,          # M3: 红花色一组/黑花色一组
     }
 
 
-def _is_flush(cards, four_fingers: bool = False) -> bool:
+# M3：j_smeared 花色分组映射（H/D 同组，S/C 同组）
+_SMEAR_GROUP = {"H": "R", "D": "R", "S": "B", "C": "B"}
+
+
+def _is_flush(cards, four_fingers: bool = False, smeared: bool = False) -> bool:
     need = 4 if four_fingers else 5
     non_stone = [cd for cd in cards if "STONE" not in mods(cd)]
     if len(cards) < need or len(non_stone) < need:
         return False
-    suits = {cd["value"]["suit"] for cd in non_stone}
+    if smeared:
+        suits = {_SMEAR_GROUP[cd["value"]["suit"]] for cd in non_stone
+                 if cd["value"]["suit"] in _SMEAR_GROUP}
+    else:
+        suits = {cd["value"]["suit"] for cd in non_stone}
     wilds = any("WILD" in mods(cd) for cd in non_stone)
     return len(suits) == 1 or wilds
 
@@ -95,7 +104,7 @@ def evaluate_hand(played: list[dict], flags: dict | None = None) -> tuple[str, l
     counts = _rank_counts([cd for _, cd in non_stone])
     n = len(played)
     cv = sorted(counts.values(), reverse=True)
-    flush = _is_flush(played, flags.get("four_fingers", False))
+    flush = _is_flush(played, flags.get("four_fingers", False), flags.get("smeared", False))
     straight = _is_straight(ranks, flags.get("shortcut", False), flags.get("four_fingers", False))
 
     def idx_of_rank(r: str) -> list[int]:
@@ -219,7 +228,8 @@ JOKER_EFFECTS: dict[str, tuple[str, object]] = {
     "j_erosion": ("flat_mult", 8),
     "j_castle": ("flat_chips", 25),
     "j_bloodstone": ("per_card_mult", ("H", 1)),
-    "j_baron": ("xmult", 2.0),
+    # M5：Baron 真实效果是每张在手 K ×1.5（旧固定 xmult 2.0 高估无 K 场景）
+    "j_baron": ("xmult_per_held_king", 1.5),
     "j_shoot_the_moon": ("flat_mult", 6),
     "j_blackboard": ("xmult", 1.5),
     "j_card_sharp": ("xmult", 1.5),
@@ -233,6 +243,32 @@ JOKER_EFFECTS: dict[str, tuple[str, object]] = {
     "j_merry_andy": ("flat_mult", 5),
     "j_yorick": ("xmult", 1.5),
     "j_caino": ("xmult", 1.3),
+    # ---- M6 补充（效果取自 card_desc/balatrobot 文档）----
+    "j_scary_face": ("per_card_face_chips", 30),      # 人脸计分卡 +30 chips
+    "j_seeing_double": ("seeing_double_xmult", 2.0),  # 计分有梅花+其他花色 → X2
+    "j_swashbuckler": ("mult_per_other_joker_sell", 1),  # 其他小丑卖价加到 Mult
+    # 成长型的中局近似（同上节口径）
+    "j_square": ("flat_chips", 40),                   # 4张手牌每局+4 chips
+    "j_wee": ("flat_chips", 40),                      # 每张2计分+8 chips
+    "j_fortune_teller": ("flat_mult", 6),             # 每张已用塔罗+1 mult
+    "j_red_card": ("flat_mult", 9),                   # 每跳过一包+3 mult
+    "j_hanging_chad": ("retrigger_first", 2),         # 首张计分卡重触发2次
+    "j_raised_fist": ("lowest_held_mult", 2),         # 在手最低点数×2加 Mult
+    "j_mime": ("mime", 1),                            # 在手卡效果重触发（钢牌×2）
+    # 无法可靠建模（需牌组构成/每轮变化目标/rarity，gamestate 未提供，按 0 计）：
+    # j_stone/j_steel_joker/j_drivers_license（依赖全牌组构成）、
+    # j_idol/j_ancient（目标每轮变化）、j_baseball（小丑 rarity 不在 gamestate）、
+    # j_dusk（仅最后一手）、Blueprint/Brainstorm（邻位复制）
+}
+
+# X 倍率小丑全集（含未建模卡）——serializer 的"无X倍率警示"用，
+# 避免持有未建模 Xmult 时误报"没有任何X倍率小丑"
+_XMULT_KINDS = {"xmult", "contains_xmult", "xmult_per_held_king", "seeing_double_xmult"}
+XMULT_KEYS = {k for k, (kind, _) in JOKER_EFFECTS.items()
+              if kind in _XMULT_KINDS or kind == "per_card_rank_xmult"} | {
+    # 未建模但确为 X 倍率的卡（据 card_desc）
+    "j_ancient", "j_steel_joker", "j_idol", "j_baseball", "j_drivers_license",
+    "j_madness", "j_throwback", "j_to_the_moon", "j_bloodstone",
 }
 
 
@@ -276,41 +312,63 @@ def score_play(
     ctx: dict,
     debuff_idx: set[int] | None = None,
 ) -> dict:
-    """debuff_idx: 被弱化的出牌下标（0 筹码、无卡牌效果，但计入牌型）。"""
+    """debuff_idx: 被弱化的出牌下标（0 筹码、无卡牌效果，但计入牌型）。
+
+    M4：mult 改为按小丑从左到右顺序即时结算（+先加、X再乘当前值），
+    旧版"全部加完再乘"在 +mult 位于 Xmult 右侧时系统性高估。
+    M5：新增在手效果（钢牌×1.5/Baron每王/最低点数/mime 双触发）。
+    """
     debuff_idx = debuff_idx or set()
     base = hand_levels.get(hand_name) or {"chips": 5, "mult": 1}
     chips = float(base["chips"])
-    mult_add = float(base["mult"])
-    mult_mul = 1.0
+    mult = float(base["mult"])
 
-    scoring = [played[i] for i in scoring_idx]
     if ctx.get("splash"):  # j_splash: 打出的牌全部计分
-        scoring = [cd for i, cd in enumerate(played) if i not in debuff_idx]
-    for cd in scoring:
-        chips += _card_chips(cd) + _enh_chips(cd)
+        scoring_idx = [i for i, _ in enumerate(played) if i not in debuff_idx]
+    # 弱化牌（花色 Boss）：计牌型但 0 筹码 0 效果
+    eff_idx = [i for i in scoring_idx if i not in debuff_idx]
+    scoring = [played[i] for i in eff_idx]
+
+    # hanging_chad：首张计分卡重触发（其贡献再计 arg 次）
+    retrigger_first = 0
+    for jk in jokers:
+        eff = JOKER_EFFECTS.get(jk.get("key", ""))
+        if eff and eff[0] == "retrigger_first":
+            retrigger_first = eff[1]
+    first_contrib = None
+    for pos, cd in enumerate(scoring):
+        c_chips = _card_chips(cd) + _enh_chips(cd)
         a, m = _card_mult(cd)
-        mult_add += a
-        mult_mul *= m
+        chips += c_chips
+        mult += a
+        mult *= m
+        if pos == 0:
+            first_contrib = (c_chips, a, m)
+    if first_contrib and retrigger_first:
+        chips += first_contrib[0] * retrigger_first
+        mult += first_contrib[1] * retrigger_first
+        mult *= first_contrib[2] ** retrigger_first
 
     empty_slots = max(0, ctx.get("joker_slots", 5) - len(jokers))
+    has_mime = any(j.get("key") == "j_mime" for j in jokers)
     for jk in jokers:
         eff = JOKER_EFFECTS.get(jk.get("key", ""))
         jm = mods(jk)
         if "FOIL" in jm:
             chips += 50
         elif "HOLO" in jm:
-            mult_add += 10
+            mult += 10
         elif "POLYCHROME" in jm:
-            mult_mul *= 1.5
+            mult *= 1.5
         if not eff:
             continue
         kind, arg = eff
         if kind == "flat_mult":
-            mult_add += arg
+            mult += arg
         elif kind == "flat_chips":
             chips += arg
         elif kind == "xmult":
-            mult_mul *= arg
+            mult *= arg
         elif kind == "flat_chips_per_money":
             chips += arg * ctx.get("money", 0)
         elif kind == "flat_chips_per_discard":
@@ -318,11 +376,11 @@ def score_play(
         elif kind == "flat_chips_per_deckcard":
             chips += arg * ctx.get("deck_remaining", 40)
         elif kind == "flat_mult_per_joker":
-            mult_add += arg * len(jokers)
+            mult += arg * len(jokers)
         elif kind == "contains_mult":
             t, v = arg
             if hand_name in CONTAINS.get(t, ()):
-                mult_add += v
+                mult += v
         elif kind == "contains_chips":
             t, v = arg
             if hand_name in CONTAINS.get(t, ()):
@@ -330,57 +388,76 @@ def score_play(
         elif kind == "contains_xmult":
             t, v = arg
             if hand_name in CONTAINS.get(t, ()):
-                mult_mul *= v
+                mult *= v
         elif kind == "small_hand_mult":
             if len(played) <= 3:
-                mult_add += arg
+                mult += arg
         elif kind == "per_card_mult":
             suit, v = arg
-            mult_add += v * sum(1 for c in scoring if c["value"]["suit"] == suit
-                                or "WILD" in mods(c))
+            mult += v * sum(1 for c in scoring if c["value"]["suit"] == suit
+                            or "WILD" in mods(c))
         elif kind == "per_card_chips":
             suit, v = arg
             chips += v * sum(1 for c in scoring if c["value"]["suit"] == suit
                              or "WILD" in mods(c))
         elif kind == "per_card_rank_mult":
             ranks, v = arg
-            mult_add += v * sum(1 for c in scoring if RANK_VALUE[c["value"]["rank"]] in ranks)
+            mult += v * sum(1 for c in scoring if RANK_VALUE[c["value"]["rank"]] in ranks)
         elif kind == "per_card_rank_xmult":
             ranks, v = arg
             for c in scoring:
                 if RANK_VALUE[c["value"]["rank"]] in ranks:
-                    mult_mul *= v
+                    mult *= v
         elif kind == "per_card_parity_mult":
             par, v = arg
-            mult_add += v * sum(1 for c in scoring
-                                if RANK_VALUE[c["value"]["rank"]] != 14
-                                and RANK_VALUE[c["value"]["rank"]] % 2 == (0 if par == "even" else 1))
+            mult += v * sum(1 for c in scoring
+                            if RANK_VALUE[c["value"]["rank"]] != 14
+                            and RANK_VALUE[c["value"]["rank"]] % 2 == (0 if par == "even" else 1))
         elif kind == "per_card_parity_chips":
             par, v = arg
             chips += v * sum(1 for c in scoring
                              if RANK_VALUE[c["value"]["rank"]] != 14
                              and RANK_VALUE[c["value"]["rank"]] % 2 == (0 if par == "even" else 1))
         elif kind == "per_card_face_mult":
-            mult_add += arg * sum(1 for c in scoring if c["value"]["rank"] in FACE)
+            mult += arg * sum(1 for c in scoring if c["value"]["rank"] in FACE)
+        elif kind == "per_card_face_chips":       # M6
+            chips += arg * sum(1 for c in scoring if c["value"]["rank"] in FACE)
         elif kind == "per_card_ace":
             ch, mu = arg
             n = sum(1 for c in scoring if c["value"]["rank"] == "A")
             chips += ch * n
-            mult_add += mu * n
+            mult += mu * n
         elif kind == "per_card_rank_hybrid":
             ranks, ch, mu = arg
             n = sum(1 for c in scoring if RANK_VALUE[c["value"]["rank"]] in ranks)
             chips += ch * n
-            mult_add += mu * n
+            mult += mu * n
         elif kind == "all_suits_xmult":
             suits = {c["value"]["suit"] for c in scoring}
             if suits >= {"H", "D", "C", "S"}:
-                mult_mul *= arg
+                mult *= arg
         elif kind == "no_discard_mult":
             if ctx.get("discards_left", 0) == 0:
-                mult_add += arg
+                mult += arg
         elif kind == "xmult_per_empty_joker_slot":
-            mult_mul *= max(1.0, arg * empty_slots)
+            mult *= max(1.0, arg * empty_slots)
+        elif kind == "seeing_double_xmult":       # M6：计分含梅花且有其他花色
+            suits = {c["value"]["suit"] for c in scoring}
+            if "C" in suits and len(suits) >= 2:
+                mult *= arg
+        elif kind == "mult_per_other_joker_sell":  # M6：其他小丑卖价之和
+            mult += sum((j.get("cost", {}) or {}).get("sell", 1)
+                        for j in jokers if j is not jk)
+        elif kind == "lowest_held_mult":          # M5：在手最低点数×2
+            r = ctx.get("lowest_held_rank")
+            if r:
+                mult += arg * RANK_VALUE.get(r, 0)
+        elif kind == "xmult_per_held_king":       # M5：Baron 每张在手 K
+            mult *= arg ** ctx.get("held_kings", 0)
 
-    mult = mult_add * mult_mul
+    # M5：在手钢牌 ×1.5（mime 在手时双触发）
+    held_steel = ctx.get("held_steel", 0)
+    if held_steel:
+        mult *= 1.5 ** (held_steel * (2 if has_mime else 1))
+
     return {"hand": hand_name, "chips": chips, "mult": mult, "total": chips * mult}

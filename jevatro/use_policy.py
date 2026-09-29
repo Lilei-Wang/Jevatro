@@ -18,13 +18,14 @@ USE_POLICY: dict[str, str] = {
     "c_jupiter": "none", "c_saturn": "none", "c_uranus": "none", "c_neptune": "none",
     "c_pluto": "none", "c_planet_x": "none", "c_ceres": "none", "c_eris": "none",
     "c_black_hole": "none",
-    # 塔罗：生成/无目标
+    # 塔罗：生成/无目标（槽位守卫见 _blocked：judgement 需空小丑槽，
+    # fool/emperor/high_priestess 需空消耗槽，否则 API 拒绝 NOT_ALLOWED）
     "c_fool": "none", "c_high_priestess": "none", "c_emperor": "none",
     "c_judgement": "none", "c_wheel_of_fortune": "none",
     # 塔罗：金钱
     "c_hermit": "money", "c_temperance": "money",
-    # 塔罗：强化
-    "c_magician": "best2", "c_empress": "best2", "c_hierophant": "best2",
+    # 塔罗：强化（H5 修复：真实 key 是 c_heirophant，旧拼写导致买入后永不可用）
+    "c_magician": "best2", "c_empress": "best2", "c_heirophant": "best2",
     "c_lovers": "best1", "c_chariot": "best1", "c_justice": "best1",
     "c_devil": "best1", "c_tower": "best1", "c_cryptid": "best1",
     # 塔罗：转花色 / 升点 / 毁灭
@@ -33,19 +34,54 @@ USE_POLICY: dict[str, str] = {
     # 幻灵：印记/版本（目标最佳卡）/ 无目标类
     "c_talisman": "seal1", "c_deja_vu": "seal1", "c_trance": "seal1",
     "c_medium": "seal1", "c_aura": "seal1",
-    "c_familiar": "none", "c_grim": "none", "c_incantation": "none",
+    # M1：familiar/grim/incantation 效果是"毁手中1张随机牌换强化牌"——
+    # 商店阶段无手牌必报错，只应在 SELECTING_HAND 用（hand_none）
+    "c_familiar": "hand_none", "c_grim": "hand_none", "c_incantation": "hand_none",
     "c_soul": "none",
 }
 
 # 不买：无安全用法或副作用大（Death复制/Sigil全手随机花色/Ouija减手牌位/
-# Ectoplasm减手牌位/Immolate毁5张/Ankh毁小丑/Wraith清钱/Hex毁小丑）
+# Ectoplasm减手牌位/Immolate毁5张）
+# M2 条件解禁：Ankh/Hex 在场上仅 1 小丑时无副作用（复制/镀彩唯一小丑）；
+# Wraith 清钱换稀有 Joker，钱少时利息损失可忽略。
 NO_BUY = {
     "c_death", "c_sigil", "c_ouija", "c_ectoplasm", "c_immolate",
     "c_ankh", "c_wraith", "c_hex",
 }
+NO_BUY_CONDITIONAL = {   # 满足条件时可买/可用（见 buy_ok / _blocked）
+    "c_ankh":   lambda gs: len((gs.get("jokers") or {}).get("cards", [])) == 1,
+    "c_hex":    lambda gs: len((gs.get("jokers") or {}).get("cards", [])) == 1,
+    "c_wraith": lambda gs: gs.get("money", 0) <= 8,
+}
+
+
+def buy_ok(key: str, gs: dict) -> bool:
+    """购买/开包候选过滤：NO_BUY 但满足条件解禁的放行。"""
+    if key not in NO_BUY:
+        return True
+    cond = NO_BUY_CONDITIONAL.get(key)
+    return bool(cond and cond(gs))
+
 
 SHOP_USABLE = {"none", "money"}          # SHOP 状态可用的类型
-HAND_USABLE = {"best1", "best2", "junk2", "offsuit3", "strength2", "seal1"}
+HAND_USABLE = {"best1", "best2", "junk2", "offsuit3", "strength2", "seal1",
+               "hand_none"}
+# 需要选目标的类型（hand_none 无目标直接用）
+TARGETED = HAND_USABLE - {"hand_none"}
+
+
+def _blocked(gs: dict, key: str) -> bool:
+    """H6 生成类守卫：生成物需要空槽，否则游戏返回 NOT_ALLOWED（实测 20 次）。"""
+    cons = gs.get("consumables") or {}
+    jok = gs.get("jokers") or {}
+    if key == "c_judgement":          # 生成随机小丑 → 需空小丑槽
+        return jok.get("count", 0) >= jok.get("limit", 5)
+    if key in ("c_fool", "c_emperor", "c_high_priestess"):
+        return cons.get("count", 0) >= cons.get("limit", 2)
+    cond = NO_BUY_CONDITIONAL.get(key)
+    if key in NO_BUY and cond:        # ankh/hex/wraith 条件不满足时也不可用
+        return not cond(gs)
+    return False
 
 
 def _best_indices(gs: dict, n: int) -> list[int]:
@@ -137,8 +173,9 @@ def apply(bot, log, gs: dict, phase: str, max_uses: int = 4) -> dict:
         for i, c in enumerate(cons):
             if c.get("key") in skipped:
                 continue
-            kind = USE_POLICY.get(c.get("key", ""))
-            if kind in usable:
+            key = c.get("key", "")
+            kind = USE_POLICY.get(key)
+            if kind in usable and not _blocked(gs, key):
                 picked = (i, c, kind)
                 break
         if picked is None:
@@ -149,7 +186,7 @@ def apply(bot, log, gs: dict, phase: str, max_uses: int = 4) -> dict:
             continue
         params = {"consumable": i}
         tg = _targets_for(gs, kind, card["key"])
-        if kind in HAND_USABLE:
+        if kind in TARGETED:
             if not tg:
                 fails += 1
                 skipped.add(card["key"])  # 无合适目标 → 本回合跳过这张
@@ -166,6 +203,7 @@ def apply(bot, log, gs: dict, phase: str, max_uses: int = 4) -> dict:
             log.action("use", params, gs, bot.gamestate(), error=str(e),
                        extra={"why": f"{card['key']} ({kind})"})
             fails += 1
+            skipped.add(card["key"])  # H6：失败不再重试同一张（防连败殃及同批）
             gs = bot.gamestate()
         time.sleep(0.2)
     return gs

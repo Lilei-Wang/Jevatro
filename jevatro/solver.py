@@ -5,7 +5,7 @@ from itertools import combinations
 
 from rules import (boss_rules, effective_hand_levels, is_debuffed,
                    legal_hand_types, most_played_hand)
-from scoring import evaluate_hand, mods, rule_flags, score_play
+from scoring import RANK_VALUE, evaluate_hand, mods, rule_flags, score_play
 
 
 def all_plays(hand_cards: list[dict], rules: dict,
@@ -39,11 +39,17 @@ def best_play(gamestate: dict) -> dict:
     only_types, banned_types = legal_hand_types(gs, rules)
     flags = rule_flags(jokers)
     cards_area = gs.get("cards") or {}
+    # M5：在手效果统计（钢牌/王数/最低点数——供 score_play 的在手加成）
+    hand_all = gs.get("hand", {}).get("cards", [])
+    held_ranks = [c["value"]["rank"] for c in hand_all]
     ctx = {
         "money": gs.get("money", 0),
         "discards_left": gs.get("round", {}).get("discards_left", 0),
         "deck_remaining": cards_area.get("count", 40) if isinstance(cards_area, dict) else 40,
         "joker_slots": gs.get("jokers", {}).get("limit", 5),
+        "held_steel": sum(1 for c in hand_all if "STEEL" in mods(c)),
+        "held_kings": sum(1 for r in held_ranks if r == "K"),
+        "lowest_held_rank": min(held_ranks, key=lambda r: RANK_VALUE.get(r, 0)) if held_ranks else None,
         **flags,
     }
     debuff_idx_global = {i for i, cd in enumerate(hand_cards) if is_debuffed(cd, rules)}

@@ -8,9 +8,9 @@ from __future__ import annotations
 import os
 import time
 
-from serializer import card_name, serialize, solver_facts
+from serializer import card_name, serialize, solver_facts, tag_value
 from solver import best_play
-from use_policy import NO_BUY
+from use_policy import buy_ok
 
 import pricing
 
@@ -42,6 +42,8 @@ WEIGHTS: dict[str, dict[str, float]] = {
     "pair":     {"synergy": 0.45, "scaling": 0.25, "economy": 0.12, "immediate": 0.18},
     "highcard": {"synergy": 0.50, "scaling": 0.30, "economy": 0.08, "immediate": 0.12},
     "straight": {"synergy": 0.45, "scaling": 0.25, "economy": 0.12, "immediate": 0.18},
+    # L1：balanced 选项此前回落 default 再与 default 混合，BLEND 数学空转
+    "balanced": {"synergy": 0.40, "scaling": 0.25, "economy": 0.15, "immediate": 0.20},
 }
 
 # 方向识别：单题 Choice（旧版 5 连 Noul 有 28% 未达阈值，区分度不足）
@@ -56,21 +58,28 @@ ARCH_CHOICE = {
 DIMS = {
     "synergy":  "该商品与现有小丑/牌型等级的协同程度",
     "scaling":  "该商品的长期成长性(以本局剩余周目视角)",
-    "economy":  "该商品对金钱/利息循环的贡献",
+    # H2：旧措辞"对金钱循环的贡献"让战斗小丑恒 0-1 分（0.15 权重纯扣分），
+    # 且售价从不进任何维度——改为承载"性价比"，价格终于有维度归口
+    "economy":  "该商品考虑其标价后的资金性价比(与对战力/经济的贡献相比是否值这个价)",
     "immediate": "该商品对接下来1-2个盲注得分能力的提升程度",
 }
 RUBRIC = {
     "synergy":  ["0 与现有构筑零交互甚至冲突", "1 略相关但方向不符", "2 中性填充",
                  "3 明确加强现有方向", "4 核心拼图,改变战力曲线"],
     "scaling":  ["0 无成长", "1 一次性收益", "2 轻微成长", "3 每轮稳定成长", "4 复利式成长"],
-    "economy":  ["0 纯花钱无回报", "1 略亏", "2 回本", "3 产出大于成本", "4 直接利息引擎"],
+    "economy":  ["0 明显溢价完全不值", "1 偏贵", "2 价格与价值相称", "3 物有所值",
+                 "4 白捡级性价比"],
     "immediate": ["0 对得分完全无助", "1 略有帮助", "2 有一定帮助", "3 显著提升近期得分",
                   "4 立刻改变能否过关"],
 }
 
 BUY_VALUE_TAU = 0.40    # 综合价值阈值（置信度仅记录不门控：实测 conf=0.0 是"无信号"非"不可靠"）
-ARCHETYPE_TAU = 0.50    # 方向识别的 noul 阈值
 BLEND_DEFAULT = 0.5     # 方向权重与 default 各占一半（防止 econ 方向过度稀释战力权重）
+
+# L2：星球确定性升级加成/减分（答后加权，替代旧的进候选前预过滤——
+# 旧过滤在 Jev 回答之前就用代码侧方向估算把星球挡掉，ante 1-2 全灭）
+PLANET_MATCH_BONUS = 0.10
+PLANET_MISMATCH_PENALTY = 0.15
 
 # 可买的卡包：小丑包(加槽)/标准牌包(进牌组)/天体包(星球即用)/
 # 塔罗包/幻灵包（开包选卡已由 pack_pick 支持，解禁）
@@ -93,33 +102,6 @@ ARCH_HANDS = {
 MAX_DECK_CARDS = 60   # 卡组膨胀约束：超过后不再买标准牌包（稀释抽牌质量）
 
 
-def _arch_hint(gs: dict) -> str:
-    """代码侧方向估算（星球守卫用）：取历史打得最多的牌型所属方向。"""
-    try:
-        best_hand, best_n = None, -1
-        for name, info in (gs.get("hands") or {}).items():
-            n = (info or {}).get("played", 0)
-            if n > best_n:
-                best_hand, best_n = name, n
-        for arch, hands in ARCH_HANDS.items():
-            if best_hand in hands:
-                return arch
-    except Exception:
-        pass
-    return ""
-
-
-def _planet_ok(gs: dict, key: str, arch: str) -> bool:
-    """星球卡守卫：升级的牌型 ∈ 方向匹配 或 历史已打 ≥2 次。"""
-    hand = PLANET_HAND.get(key)
-    if not hand:
-        return True
-    played = (gs.get("hands", {}).get(hand, {}) or {}).get("played", 0)
-    if played >= 2:
-        return True
-    return hand in ARCH_HANDS.get(arch, set())
-
-
 class JevLayer:
     def __init__(self, log=None):
         load_env()
@@ -131,6 +113,7 @@ class JevLayer:
         self.out_tokens = 0
         self.cost_usd = 0.0
         self._client = None
+        self._skip_ante: dict = {}   # M7：每 ante 跳盲次数护栏（与 llm_layer 对齐）
 
     @property
     def client(self):
@@ -172,7 +155,6 @@ class JevLayer:
         reroll_cost = gs.get("round", {}).get("reroll_cost", 5)
 
         # 可行性过滤（代码层硬约束）
-        arch_hint = _arch_hint(gs)
         candidates = []   # (slot_id, card, kind)
         slots_full = jokers_area.get("count", 0) >= jokers_area.get("limit", 5)
         for i, c in enumerate(shop_cards):
@@ -183,10 +165,10 @@ class JevLayer:
             if s in ("PLANET", "TAROT", "SPECTRAL"):
                 if cons_area.get("count", 0) >= cons_area.get("limit", 2):
                     continue
-                if c.get("key") in NO_BUY:   # 无安全用法的消耗牌不买
+                if not buy_ok(c.get("key", ""), gs):   # 无安全用法的消耗牌不买（M2 条件解禁）
                     continue
-            if s == "PLANET" and not _planet_ok(gs, c.get("key", ""), arch_hint):
-                continue  # 星球守卫：不升非主力牌型
+            # L2：星球不再预过滤（旧守卫在 Jev 答方向之前就把 ante1-2 的星球全灭），
+            # 改为答后按方向匹配加/减分
             if s == "BOOSTER":
                 if not c.get("key", "").startswith(BUYABLE_PACK_PREFIXES):
                     continue
@@ -223,10 +205,11 @@ class JevLayer:
             questions["sell_which"] = _choice(
                 "若要买入新小丑必须先卖掉一个现有小丑, 卖掉损失最小的是", criteria)
 
-        # 3) 重掷判断（商店无货时的备选）
-        questions["reroll_worth"] = _noul(
-            f"当前商店候选的综合价值普遍不高且金币${money}(重掷费${reroll_cost})时,"
-            f"花${reroll_cost}重掷商店优于直接离店")
+        # 3) 重掷判断（H3 反转）：存在性事实题替代旧的价值肯定题——
+        # 旧措辞"普遍不高且金币$X时花$Y重掷优于离店"三重保守（复合条件+
+        # 肯定花钱动作+错误比较对象），实测 2056 问仅 44 次过 0.5
+        questions["shelf_has_goods"] = _noul(
+            "当前商店货架上存在至少一件对当前构筑明显值得按其标价买走的商品")
 
         if not all_items and money < reroll_cost:
             return [{"method": "next_round", "params": {},
@@ -254,13 +237,24 @@ class JevLayer:
             for dim in DIMS:
                 ans = a.get(f"{slot}__{dim}")
                 if ans is None:
-                    dims[dim] = None
+                    # L3：单维缺答不再整件丢弃（批量 20-40 问丢一件无感知）
+                    dims[dim] = {"norm": 0.5, "conf": 0.0, "missing": True}
                     continue
-                dims[dim] = {"norm": (ans.score or 0) / 4, "conf": getattr(ans, "confidence", 1.0)}
-            if any(d is None for d in dims.values()):
-                continue
+                # H1：量表"4"锚点过极端从未被打出（实测 0 次，3 仅 0.6%），
+                # /4 归一把优秀商品压在 0.4-0.55 阈值带——有效天花板改按 3 归一
+                dims[dim] = {"norm": min(ans.score or 0, 3) / 3,
+                             "conf": getattr(ans, "confidence", 1.0)}
             value = sum(w[dim] * dims[dim]["norm"] for dim in DIMS)
             min_conf = min(dims[dim]["conf"] for dim in DIMS)
+            # L2：星球确定性升级按方向答后加权——匹配方向或已打≥2次 +0.10，
+            # 方向不符 -0.15（替代旧的进候选前硬过滤）
+            if kind == "PLANET":
+                hand = PLANET_HAND.get(card.get("key", ""))
+                played = (gs.get("hands", {}).get(hand, {}) or {}).get("played", 0)
+                if hand and (played >= 2 or hand in ARCH_HANDS.get(arch, set())):
+                    value += PLANET_MATCH_BONUS
+                elif hand:
+                    value -= PLANET_MISMATCH_PENALTY
             scored.append({"slot": slot, "card": card, "kind": kind, "value": value,
                            "conf": min_conf, "dims": dims})
 
@@ -314,13 +308,15 @@ class JevLayer:
                                 f"conf={it['conf']:.2f} arch={arch}"})
             money -= price
 
-        # 重掷：没买到东西时——钱宽裕（>重掷费+10）放宽到 noul>0.5，
-        # 钱紧维持 noul>0.6（死因分析：深局常有钱没处花）
-        if not plan and money >= reroll_cost + 3:
-            thr = 0.5 if money >= reroll_cost + 10 else 0.6
-            if getattr(a.get("reroll_worth"), "noul", 0) > thr:
+        # 重掷（H3+H4 反转）：货架存在性判断为"没有值得买的货"(noul<0.45)且钱够 → 掷。
+        # 与 `not plan` 解耦：只看本轮是否真的买了卡/券（卖牌腾位不算花钱）；
+        # 旧版阈值 0.5/0.6 落在 noul 分布死区，全部历史仅触发过 11 次
+        if (not card_buy_planned and not voucher_buy_planned
+                and money >= reroll_cost + 3):
+            n = getattr(a.get("shelf_has_goods"), "noul", None)
+            if n is not None and n < 0.45:
                 plan.append({"method": "reroll", "params": {},
-                             "why": f"jev reroll noul={a['reroll_worth'].noul:.2f}"})
+                             "why": f"货架无值得买的货(jev noul={n:.2f}) → 重掷"})
         return plan
 
     # ------------------------------------------------------------------
@@ -328,11 +324,11 @@ class JevLayer:
         """开包：一次 Choice 问"对当前构筑最有价值的一张"。返回 (下标|None, why)。
 
         无安全用法的卡（NO_BUY，如死亡/恶灵等）不进入候选（保留原始下标映射），
-        全被滤掉则跳过整包。
+        全被滤掉则跳过整包。M2 条件解禁后按 buy_ok 放行。
         """
         pack_cards = gs.get("pack", {}).get("cards", [])
         entries = [(i, c) for i, c in enumerate(pack_cards)
-                   if c.get("key") not in NO_BUY]
+                   if buy_ok(c.get("key", ""), gs)]
         if not entries:
             return None, "包内无安全可选卡 → 跳过"
         state_text = serialize(gs)
@@ -368,15 +364,24 @@ class JevLayer:
             return "select", f"solver_can_clear={facts.get('can_clear')}"
 
         try:
+            # M7：存在性问法替代价值肯定题——旧措辞"跳过更合理"实测 noul 落在
+            # 0.44-0.64 永不过 0.65 阈值；附 tag 价值分级辅助判断
+            ante = gs.get("ante_num")
+            if self._skip_ante.get(ante, 0) >= 1:
+                return "select", "skip护栏: 本ante已跳过1盲(防连跳直冲Boss)"
+            tag = blind.get("tag_name", "奖励tag") if blind else "tag"
+            tag_val = tag_value(tag)
+            tag_note = f"{tag}({tag_val})" if tag_val else tag
             resp = self.ask(serialize(gs, facts["text"]), {
-                "skip_better": _noul(
-                    f"求解器判断按最优打法也难以过关({facts['text']})。"
-                    f"跳过该盲注(换取{blind.get('tag_name','奖励tag') if blind else 'tag'})"
-                    f"比强行挑战更合理"),
+                "can_pass": _noul(
+                    f"结合手牌/小丑/牌型等级，当前战力有较大概率通过该盲注"
+                    f"(求解器估算: {facts['text']})"),
             })
-            n = resp.answers["skip_better"].noul
-            action = "skip" if n > 0.65 else "select"
-            return action, f"jev skip noul={n:.2f}"
+            n = resp.answers["can_pass"].noul
+            if n < 0.45:
+                self._skip_ante[ante] = self._skip_ante.get(ante, 0) + 1
+                return "skip", f"jev 判定难过关(noul={n:.2f}) → 跳过换{tag_note}"
+            return "select", f"jev 判定可过关(noul={n:.2f})"
         except Exception as e:
             self.failed += 1
             if self.log:

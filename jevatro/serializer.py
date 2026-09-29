@@ -56,6 +56,11 @@ def _tag_value(name: str) -> str:
     return ""
 
 
+# 公开别名（jev_layer 跳盲题面引用）
+def tag_value(name: str) -> str:
+    return _tag_value(name)
+
+
 def _blind_line(gs: dict) -> str:
     parts = []
     boss_preview = ""
@@ -84,14 +89,20 @@ def serialize(gs: dict, extra_facts: str = "") -> str:
                  f"金币${gs.get('money')}, 手数{r.get('hands_left')}, 弃牌{r.get('discards_left')}, "
                  f"已得chips {r.get('chips', 0)}")
     # 死因分析结论：深局常囤钱至死——利息上限$25，超出部分不生息
-    if (gs.get("money") or 0) >= 26:
-        lines.append(f"[经济警示] 金币已超利息上限$25，多出的${gs.get('money') - 25}"
+    money = gs.get("money") or 0
+    if money >= 26:
+        lines.append(f"[经济警示] 金币已超利息上限$25，多出的${money - 25}"
                      f"不产生利息，应尽快转化为战力")
+    # M8：利息预告（economy 维度判断的资金事实依据）
+    interest = min(money // 5, 5)
+    if interest:
+        lines.append(f"[利息] 下回合收息 +${interest}(每$5生$1, 上限$5)")
     # 无 X 倍率警示：后程需求指数增长，纯加算小丑会乏力
-    from scoring import JOKER_EFFECTS
+    # M6 修正：has_x 不能只看已建模效果表——持有未建模的 Xmult（j_ancient/
+    # j_steel_joker/j_idol 等）时会输出假警示误导 Jev，改用 curated 全集
+    from scoring import XMULT_KEYS
     jok_cards = (gs.get("jokers") or {}).get("cards", [])
-    has_x = any(JOKER_EFFECTS.get(j.get("key", ""), ("",))[0].startswith(("xmult", "contains_xmult", "xmult_per", "per_card_rank_xmult"))
-                for j in jok_cards)
+    has_x = any(j.get("key", "") in XMULT_KEYS for j in jok_cards)
     if jok_cards and not has_x:
         lines.append("[战力警示] 当前没有任何X倍率小丑, 后续盲注需求指数增长, "
                      "加算类小丑会越来越吃力, X倍率商品优先级应提高")
@@ -107,8 +118,13 @@ def serialize(gs: dict, extra_facts: str = "") -> str:
 
     jokers = gs.get("jokers", {}).get("cards", [])
     if jokers:
-        lines.append(f"[小丑 {len(jokers)}/{gs['jokers'].get('limit', 5)}] " +
-                     " | ".join(card_name(j) for j in jokers))
+        # M8：附卖价（卖牌腾位决策的回本依据）
+        parts = []
+        for j in jokers:
+            sell = (j.get("cost", {}) or {}).get("sell")
+            nm = card_name(j)
+            parts.append(f"{nm}(卖${sell})" if sell is not None else nm)
+        lines.append(f"[小丑 {len(jokers)}/{gs['jokers'].get('limit', 5)}] " + " | ".join(parts))
     else:
         lines.append("[小丑] 无")
 

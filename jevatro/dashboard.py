@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 import requests
 
 from card_desc import CARD_DESC
+from card_zh import CARD_EN_ZH_PAYLOAD
 
 LOG_DIR = Path(__file__).parent / "logs"
 SHOT_DIR = LOG_DIR / "_shots"
@@ -518,6 +519,7 @@ PAGE = r"""<!DOCTYPE html>
 </div>
 
 <script>
+/*__ZH_MAPS__*/
 let cur=null, runs=[], hint={indices:[]}, lastCount=-1;
 
 const ZH_STATE={MENU:'主菜单',BLIND_SELECT:'选择盲注',SELECTING_HAND:'出牌阶段',
@@ -531,6 +533,35 @@ const ZH_SET={JOKER:'小丑',PLANET:'星球',TAROT:'塔罗',SPECTRAL:'幻灵',
 const SUIT={S:'♠',H:'♥',D:'♦',C:'♣'};
 
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;')}
+// —— 全中文化工具：卡名/牌型/理由/状态文本 ——
+function zhCard(k){return CARD_ZH[k]||k}
+function zhHand(n){return HAND_ZH[n]||n}
+const _KEY_RE=/\b(?:j|c|v|p)_[a-z0-9_]+\b/g;
+function zhWhy(s){
+  let t=String(s||'');
+  t=t.replace(/value=/g,'价值=').replace(/conf=/g,'置信=').replace(/arch=/g,'方向=')
+     .replace(/noul=/g,'概率=').replace(/solver_can_clear/g,'求解器可过')
+     .replace(/naive_fallback/g,'朴素回退').replace(/dig:/g,'挖牌:')
+     .replace(/best=/g,'最优=').replace(/need=/g,'需求=')
+     .replace(/jev skip/g,'Jev跳盲').replace(/jev reroll/g,'Jev重掷')
+     .replace(/solver_fallback/g,'求解器兜底');
+  t=t.replace(_KEY_RE,m=>zhCard(m));
+  for(const [en,zh] of Object.entries(HAND_ZH)) t=t.replaceAll(en,zh);
+  return t;
+}
+function zhStateText(t){
+  let s=String(t||'');
+  for(const [k,en] of Object.entries(CARD_EN)){       // 英文效果描述 → 中文（先于 key 替换）
+    if(s.includes(en)) s=s.replaceAll(en,DESC_ZH[k]||en);
+  }
+  s=s.replace(_KEY_RE,m=>zhCard(m));
+  s=s.replace(/\([A-Za-z][A-Za-z0-9' ]*\)/g,'');       // 残留英文 Label
+  for(const [en,zh] of Object.entries(HAND_ZH)) s=s.replaceAll(en,zh);
+  for(const k in ZH_MOD) s=s.replaceAll('['+k+']','['+ZH_MOD[k]+']');
+  s=s.replace(/\bDouble Tag\b/g,'双倍标签').replace(/\bUncommon Tag\b/g,'罕见标签')
+     .replace(/\bRare Tag\b/g,'稀有标签').replace(/\bTag\b/g,'标签');
+  return s;
+}
 function modZh(m){return (m||[]).filter(x=>x&&x!=='None').map(x=>ZH_MOD[x]||x).join('/')}
 
 async function refreshRuns(){
@@ -598,7 +629,7 @@ function zhOption(k){
 function zhJson(v,ind){
   const pad='  '.repeat(ind);
   if(v===null||v===undefined)return '无';
-  if(typeof v!=='object')return ZH_VAL[String(v)]??JSON.stringify(v);
+  if(typeof v!=='object')return ZH_VAL[String(v)]??HAND_ZH[String(v)]??zhCard(String(v));
   if(Array.isArray(v))return '['+v.map(x=>zhJson(x,ind+1)).join(', ')+']';
   return '\n'+Object.entries(v).map(([k,val])=>
     `${pad}  ${ZH_KEY[k]||k}: ${zhJson(val,ind+1)}`).join('\n');
@@ -677,7 +708,7 @@ function renderJevDecisions(recs, isLLM){
         <td>已回退${esc(d.fb).slice(0,16)}</td></tr>`:
       `<tr class="${idx===0?'newest':''}">
         <td class="tt">${d.t}秒${idx===0?'<span class="badge-new">最新</span>':''}</td>
-        <td title="${esc(String(d.q))}"><span class="qk">${esc(zhQuestion(d.k))}</span><span class="qi">${esc(String(d.q))}</span></td>
+        <td title="${esc(zhStateText(String(d.q)))}"><span class="qk">${esc(zhQuestion(d.k))}</span><span class="qi">${esc(zhStateText(String(d.q)))}</span></td>
         <td class="dv" title="${esc(ansText(d.a))}">${ansOf(d.a,dimOf(d.k))}${distHtml(d.a,dimOf(d.k))}</td>
         <td>${d.c!=null?`<div class="cbar"><div class="bar"><i style="width:${Math.round(d.c*100)}%;
           background:${d.c>=0.6?'#34d399':d.c>=0.35?'#fbbf24':'#f87171'}"></i></div><b>${(+d.c).toFixed(2)}</b></div>`
@@ -816,7 +847,8 @@ function distHtml(a,dim){
 function evHtml(r,i){
   let head='',body='';
   if(r.kind==='action'){
-    const why=r.extra?whyOf(r.extra):'';
+    const ex=r.extra||(r.params||{}).extra||{};
+    const why=Object.keys(ex).length?whyOf(ex):'';
     const cardsHtml=(r.method==='play'||r.method==='discard')&&
       Array.isArray(r.params.cards)&&Array.isArray((r.before||{}).hand);
     head=`<span class="t">${r.t}秒</span><span class="tag action">动作</span>
@@ -833,19 +865,19 @@ function evHtml(r,i){
       <span class="sum"><b>${n}</b> 题 · <i>${r.latency}秒</i></span>
       <span class="why">${archOf(r)}</span>`;
     const qs=Object.entries(r.answers||{}).map(([k,a])=>`
-      <div class="q"><div class="k">${k}</div>
+      <div class="q"><div class="k">${esc(zhQuestion(k))}</div>
         <div class="v">${ansOf(a,dimOf(k))}</div>
         ${a.confidence!=null?`<div class="bar"><i style="width:${Math.round(a.confidence*100)}%"></i></div>`:''}
         <div class="p">${esc((r.questions||{})[k]||'').slice(0,76)}</div></div>`).join('');
-    body=copyBtn(r)+`<div class="lbl">发送给 Jev 的局面原文</div>
-      <pre>${esc(r.state||'')}</pre>
+    body=copyBtn(r)+`<div class="lbl">发送给 Jev 的局面原文（中文转写）</div>
+      <pre>${esc(zhStateText(r.state||''))}</pre>
       <div class="lbl">各题回答（含置信度）</div><div class="qa">${qs}</div>`;
   }else if(r.kind==='llm'){
     head=`<span class="t">${r.t}秒</span><span class="tag llm">LLM 判断</span>
       <span class="sum">${r.model||''} · <i>${r.latency}秒</i> · ${r.in_tokens||0}入/${r.out_tokens||0}出</span>`;
-    body=copyBtn({reply:(r.reply||'')})+`<div class="lbl">请求原文</div>
-      <pre>${esc((r.prompt||'').slice(0,1200))}</pre>
-      <div class="lbl">模型回复</div><pre>${esc(r.reply||'')}</pre>`;
+    body=copyBtn({reply:(r.reply||'')})+`<div class="lbl">请求原文（中文转写）</div>
+      <pre>${esc(zhStateText((r.prompt||'').slice(0,1200)))}</pre>
+      <div class="lbl">模型回复</div><pre>${esc(zhStateText(r.reply||''))}</pre>`;
   }else if(r.kind==='jev_error'){
     head=`<span class="t">${r.t}秒</span><span class="tag jev_error">JEV 失败</span>
       <span class="err">${esc(r.error||'').slice(0,76)} → 已回退${r.fallback||''}</span>`;
@@ -960,6 +992,8 @@ function shopCard(r,qs,as,acts,itemKeys){
   const itemHtml=Object.entries(groups).map(([slot,dims])=>{
     const qText=qs[slot+'__synergy']||'';
     const meta=itemMeta(qText), key=itemKeyOf(qText);
+    const showName=key?zhCard(key):meta.name;          // 全中文：卡名走映射
+    const showTail=key?(DESC_ZH[key]||meta.tail):meta.tail;
     let v=0;
     const dimRows=['synergy','scaling','economy','immediate'].map(dim=>{
       const a=dims[dim];
@@ -981,9 +1015,9 @@ function shopCard(r,qs,as,acts,itemKeys){
       :'<span class="outb skip">未过线</span>';
     const vc=bought?'#34d399':pass?'#60a5fa':'#4a5568';
     return `<div class="icard ${bought?'bought':''}">
-      <div class="itop"><span class="iname" title="${esc(meta.name)}">${esc(meta.name)}</span>
+      <div class="itop"><span class="iname" title="${esc(showName)}">${esc(showName)}</span>
         <span class="iprice">$${meta.price}</span></div>
-      <div class="itail" title="${esc(meta.tail)}">${esc(meta.tail)}</div>
+      <div class="itail" title="${esc(showTail)}">${esc(showTail)}</div>
       ${dimRows}
       <div class="vrow"><div class="vbar">
         <i class="fill" style="width:${Math.min(100,Math.round(v/0.9*100))}%;background:${vc}"></i>
@@ -1011,7 +1045,7 @@ function blindCard(r,qs,as,acts){
     <span class="ftag blind">盲注决策</span>
     <span class="fsub">${isNew?'战力能否过关（存在性问法）':'跳过是否更优（旧版问法）'} · <i>${r.latency}秒</i>
     ${skipped?'<span class="outb buy">→ 已跳过</span>':'<span class="outb skip">→ 已挑战</span>'}</span></div>
-    <div class="flab">${esc(String(qs[isNew?'can_pass':'skip_better']||'').slice(0,90))}</div>
+    <div class="flab">${esc(zhStateText(String(qs[isNew?'can_pass':'skip_better']||'')).slice(0,90))}</div>
     ${isNew?noulGauge(a,0.45,'可过关 → 挑战','难过关 → 跳过')
            :noulGauge(a,0.65,'不跳 · 挑战','跳过（需>0.65，实测永不达）')}</div>`;
 }
@@ -1035,8 +1069,8 @@ function rerollCard(r,qs,as,acts){
 function archOf(r){const a=r.answers&&r.answers.archetype;
   return a&&a.choice?`方向判定: ${a.choice}`:''}
 function whyOf(e){
-  if(e.why)return esc(e.why).slice(0,66);
-  if(e.solver)return `${e.solver.hand}=${e.solver.total.toFixed(0)}分`;
+  if(e.why)return esc(zhWhy(e.why)).slice(0,80);
+  if(e.solver)return `${zhHand(e.solver.hand)}=${e.solver.total.toFixed(0)}分`;
   if(e.solver_fallback)return'求解器兜底';
   return'';
 }
@@ -1055,6 +1089,9 @@ setInterval(renderCompare,30000);
 </body>
 </html>
 """
+
+# 中文映射注入：卡名/描述/牌型 → 前端常量（观测台全中文化）
+PAGE = PAGE.replace("/*__ZH_MAPS__*/", CARD_EN_ZH_PAYLOAD)
 
 
 class Handler(BaseHTTPRequestHandler):
