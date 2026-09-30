@@ -74,7 +74,7 @@ def run(seed: str | None = None, deck: str = "RED", stake: str = "WHITE") -> dic
             if (not bp["can_clear"]
                     and gs.get("round", {}).get("discards_left", 0) > 0
                     and gs.get("round", {}).get("hands_left", 0) >= 2):
-                d = best_discard(gs)
+                d, dwhy = best_discard(gs)
                 if d:
                     gs = act(bot, log, gs, "discard", cards=d,
                              extra={"why": f"dig: best={bp['total']:.0f}/need={bp['need']}"})

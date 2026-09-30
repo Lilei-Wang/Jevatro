@@ -79,21 +79,32 @@ def run(seed: str | None = None, deck: str = "RED", stake: str = "WHITE") -> dic
             # 先把需要手牌目标的消耗牌用掉（强化最佳卡/转花色/瘦身等）
             gs = use_policy.apply(bot, log, gs, phase="HAND")
             bp = best_play(gs)
+            # 出牌接入决策链路：top1/top2 接近且牌型不同时由 Jev 仲裁
+            top3 = bp.get("top3") or []
+            if len(top3) >= 2:
+                pick, awhy = jev.play_arbitrate(gs, top3)
+                if pick == 1:
+                    alt = top3[1]
+                    bp.update({k: alt[k] for k in ("indices", "hand", "chips", "mult", "total")})
+                    bp["arbitrated"] = awhy
+            jev.note_play(bp)   # 动态出牌流跟踪（主力牌型统计）
             # 打不过且有弃牌余量：先挖牌（保方向弃边缘），两手以上才值得弃
             if (not bp["can_clear"]
                     and gs.get("round", {}).get("discards_left", 0) > 0
                     and gs.get("round", {}).get("hands_left", 0) >= 2):
-                d = best_discard(gs)
+                d, dwhy = best_discard(gs)
                 if d:
                     gs = act(bot, log, gs, "discard", cards=d,
-                             extra={"why": f"dig: best={bp['total']:.0f}/need={bp['need']}"})
+                             extra={"why": f"dig: best={bp['total']:.0f}/need={bp['need']} · {dwhy}"})
                     print(f"  [ante {gs.get('ante_num')} r{gs.get('round_num')}] "
                           f"discard {d} (best={bp['total']:.0f} < {bp['need']})")
                     time.sleep(0.1)
                     continue
             try:
                 gs = act(bot, log, gs, "play", raise_on_error=True, cards=bp["indices"],
-                         extra={"solver": {k: bp[k] for k in ("hand", "chips", "mult", "total")}})
+                         extra={"solver": {k: bp[k] for k in ("hand", "chips", "mult", "total")},
+                                "top3": bp.get("top3") or [],
+                                **({"arbitrated": bp["arbitrated"]} if bp.get("arbitrated") else {})})
             except BalatroError as e:
                 hand_n = len(gs.get("hand", {}).get("cards", []))
                 gs = act(bot, log, gs, "play", cards=list(range(min(5, hand_n))),

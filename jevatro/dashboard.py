@@ -456,6 +456,21 @@ PAGE = r"""<!DOCTYPE html>
   .sline{margin-top:8px;font-size:12px;color:#c6cede}
   .sline b{font-family:var(--mono);color:#34d399;font-size:13px}
   .sline .fm{color:#fbbf24;font-family:var(--mono)}
+  /* —— 模型对话独立页 —— */
+  .tabs{display:flex;gap:8px;margin-bottom:12px}
+  .tab{padding:5px 16px;border-radius:8px;border:1px solid var(--line);cursor:pointer;
+       font-size:12.5px;color:var(--muted);background:var(--card2)}
+  .tab.on{background:#0d2b1d;color:var(--green);border-color:#2f5e43;font-weight:700}
+  .mio{display:flex;flex-direction:column;gap:10px}
+  details.mio{background:#10141a;border:1px solid #232935;border-radius:10px;padding:9px 12px}
+  details.mio summary{cursor:pointer;font-size:12.5px;color:#c6cede;list-style:none}
+  details.mio summary::-webkit-details-marker{display:none}
+  details.mio summary::before{content:'▸ ';color:#5f6878}
+  details.mio[open] summary::before{content:'▾ '}
+  details.mio .miobody{margin-top:9px;border-top:1px dashed #2a303c;padding-top:8px}
+  .alts{margin-top:5px;font-size:11px;color:#9aa3b5}
+  .alts b{color:#34d399}
+  .arb{color:#fbbf24;font-size:11px;margin-left:6px}
   /* —— LLM 决策卡 —— */
   .fcard.llmfail{border-color:#4a2a30;background:rgba(248,113,113,.05)}
   .lreason{margin-top:8px;background:#10141a;border:1px solid #232935;border-radius:8px;
@@ -504,8 +519,13 @@ PAGE = r"""<!DOCTYPE html>
       <div class="ptitle"><span class="no">03</span><b id="decTitle">决策过程</b>
         <span class="live" id="jStat">打分 → 加权 → 阈值 → 动作</span></div>
       <div class="jstat" id="jStatBar"></div>
+      <div class="tabs">
+        <div class="tab on" id="tabFlow" onclick="switchTab('flow')">决策过程</div>
+        <div class="tab" id="tabIO" onclick="switchTab('io')">模型对话</div>
+      </div>
       <div class="jevbox">
         <div class="funnel" id="funnel"><div class="jempty">暂无决策</div></div>
+        <div class="mio" id="modelio" style="display:none"></div>
         <details class="rawq"><summary>▸ 逐题原始明细（全部题目 · 选项概率 · 置信度）</summary>
         <table class="jevt" id="jevTable">
           <thead><tr id="decCols"><th style="width:64px">时间</th><th>题目</th>
@@ -547,6 +567,49 @@ const ZH_SET={JOKER:'小丑',PLANET:'星球',TAROT:'塔罗',SPECTRAL:'幻灵',
 const SUIT={S:'♠',H:'♥',D:'♦',C:'♣'};
 
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;')}
+function switchTab(which){
+  document.getElementById('funnel').style.display=which==='flow'?'flex':'none';
+  document.getElementById('modelio').style.display=which==='io'?'flex':'none';
+  document.getElementById('tabFlow').classList.toggle('on',which==='flow');
+  document.getElementById('tabIO').classList.toggle('on',which==='io');
+}
+// —— 模型对话独立页：每次调用的完整 输入state / 题目prompt / 输出答案 ——
+function renderModelIO(recs){
+  const out=[];
+  for(const r of recs){
+    if(r.kind==='jev'){
+      const qs=Object.entries(r.questions||{});
+      const body=`
+        <div class="lbl">输入 · 发给 Jev 的局面原文（${(r.state||'').length}字）</div>
+        <pre>${esc(zhStateText(r.state||''))}</pre>
+        <div class="lbl">题目与回答（${qs.length} 题）</div>
+        <div class="qa">${qs.map(([k,q])=>{
+          const a=(r.answers||{})[k]||{};
+          return `<div class="q" style="flex-basis:100%">
+            <div class="k">${esc(zhQuestion(k))} · <span style="color:#34d399">${ansOf(a,dimOf(k))}</span>
+              ${a.confidence!=null?` · 置信${(+a.confidence).toFixed(2)}`:''}</div>
+            <div class="p">${esc(zhStateText(String(q)))}</div>
+            ${distHtml(a,dimOf(k))}</div>`}).join('')}</div>`;
+      out.push({t:r.t,html:`<details class="mio"><summary>
+        🃏 JEV 调用 · ${r.t}秒 · ${qs.length}题 · ${r.latency}s · ${r.in_tokens||0}入/0出tok
+        ${r.cost_usd!=null?` · $${(+r.cost_usd).toFixed(5)}`:''}</summary>
+        <div class="miobody">${body}</div></details>`});
+    }else if(r.kind==='llm'){
+      const body=`
+        <div class="lbl">输入 · Prompt（${(r.prompt||'').length}字）</div>
+        <pre>${esc(zhStateText(r.prompt||''))}</pre>
+        <div class="lbl">输出 · 回复</div>
+        <pre>${esc(zhStateText(r.reply||'（空）'))}</pre>`;
+      out.push({t:r.t,html:`<details class="mio"><summary>
+        🤖 LLM 调用 · ${r.t}秒 · ${r.model||''} · ${r.latency}s · ${r.in_tokens||0}入/${r.out_tokens||0}出tok
+        ${r.cost_usd!=null?` · $${(+r.cost_usd).toFixed(5)}`:''}</summary>
+        <div class="miobody">${body}</div></details>`});
+    }
+  }
+  document.getElementById('modelio').innerHTML=
+    out.slice(-30).reverse().map(c=>c.html).join('')
+    ||'<div class="jempty">暂无模型调用</div>';
+}
 // —— 全中文化工具：卡名/牌型/理由/状态文本 ——
 function zhCard(k){return CARD_ZH[k]||k}
 function zhHand(n){return HAND_ZH[n]||n}
@@ -692,6 +755,7 @@ async function renderRun(){
   });
   lastCount=recs.length;
   renderJevDecisions(recs, isLLM);
+  renderModelIO(recs);
 }
 
 // —— 决策明细：Jev 局逐题+置信度 / LLM 局逐次决策+理由，最新在最上 ——
@@ -1067,6 +1131,13 @@ function solverCards(recs){
       line=`牌型 <b>${zhHand(sv.hand)}</b> = <span class="fm">${Math.round(sv.chips)}</span> ×
         <span class="fm">${Math.round(sv.mult)}</span> = <b>${Math.round(sv.total)}</b> 分 · 剩${b.hands_left??'?'}手`;
       if(ex.solver_fallback) line+=' · <span style="color:#f87171">兜底出牌</span>';
+      if(ex.arbitrated) line+=`<span class="arb">⚖ ${esc(zhWhy(ex.arbitrated))}</span>`;
+      const t3=ex.top3||[];
+      if(t3.length>=2){
+        line+=`<div class="alts">候选: `+t3.map((c,i)=>
+          `${i===0?'<b>':''}${zhHand(c.hand)}=${Math.round(c.total)}${i===0?' ✓</b>':''}`)
+          .join(' | ')+`</div>`;
+      }
     }else if(r.method==='discard'){
       const m=String(ex.why||'').match(/best=([\d.]+)\/need=(\d+)/);
       line=m?`挖牌：当前最优 <b>${m[1]}</b> / 需求 <b>${m[2]}</b> → 弃边缘牌换机会`

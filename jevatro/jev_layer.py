@@ -114,6 +114,63 @@ class JevLayer:
         self.cost_usd = 0.0
         self._client = None
         self._skip_ante: dict = {}   # M7：每 ante 跳盲次数护栏（与 llm_layer 对齐）
+        self._flow: dict = {}        # 动态出牌流：hand → [次数, 累计分]（主力牌型跟踪）
+
+    # ------------------------------------------------------------------
+    # 动态出牌流（#2）：跟踪各牌型实战均分，主力牌型注入决策
+    def note_play(self, bp: dict) -> None:
+        h = bp.get("hand")
+        if h and h != "-":
+            n, s = self._flow.get(h, (0, 0.0))
+            self._flow[h] = (n + 1, s + (bp.get("total") or 0))
+
+    def dominant_hand(self) -> str | None:
+        best, best_avg = None, 0.0
+        for h, (n, s) in self._flow.items():
+            if n >= 3 and s / n > best_avg:
+                best, best_avg = h, s / n
+        return best
+
+    def flow_line(self) -> str:
+        rows = sorted(((s / n, n, h) for h, (n, s) in self._flow.items() if n >= 2),
+                      reverse=True)[:2]
+        if not rows:
+            return ""
+        parts = []
+        for i, (avg, n, h) in enumerate(rows):
+            tag = "主力" if i == 0 else "次选"
+            parts.append(f"{tag}={h}(均分{avg:.0f}·已打{n}手)")
+        return "[出牌流] " + " | ".join(parts) + "（后续购买/升级应围绕主力迭代）"
+
+    def _state_with_flow(self, gs: dict, extra_facts: str = "") -> str:
+        text = serialize(gs, extra_facts)
+        fl = self.flow_line()
+        return text + "\n" + fl if fl else text
+
+    # ------------------------------------------------------------------
+    # 出牌仲裁（#1）：top1/top2 算分接近且牌型不同时，Jev 一票定夺
+    def play_arbitrate(self, gs: dict, top3: list[dict]) -> tuple[int, str]:
+        """返回 (选top几[0|1], why)。API 失败回落求解器默认（top0）。"""
+        t1, t2 = top3[0], top3[1]
+        if t2["total"] < 0.9 * t1["total"] or t2["hand"] == t1["hand"]:
+            return 0, "求解器分差明确"
+        try:
+            resp = self.ask(self._state_with_flow(gs), {
+                "play_arbit": _choice(
+                    "两套打法求解器算分接近，综合牌型等级/小丑协同/后续出牌流迭代价值更优的是",
+                    {"a": f"{t1['hand']}={t1['total']:.0f}分",
+                     "b": f"{t2['hand']}={t2['total']:.0f}分"}),
+            })
+            ch = resp.answers["play_arbit"].choice
+            if ch in ("a", "b"):
+                pick = 0 if ch == "a" else 1
+                return pick, f"jev仲裁选{ch}({top3[pick]['hand']})"
+            return 0, f"jev仲裁无效({ch})"
+        except Exception as e:
+            self.failed += 1
+            if self.log:
+                self.log.log("jev_error", error=str(e), fallback="solver_top1")
+            return 0, "仲裁失败→求解器默认"
 
     @property
     def client(self):
@@ -194,7 +251,7 @@ class JevLayer:
                     enumerate(gs.get("vouchers", {}).get("cards", []))]
         all_items = candidates + vouchers
 
-        state_text = serialize(gs)
+        state_text = self._state_with_flow(gs)
         questions: dict = {}
 
         # 1) 方向识别：单题 Choice（据此混合权重表）
@@ -262,7 +319,10 @@ class JevLayer:
             if kind == "PLANET":
                 hand = PLANET_HAND.get(card.get("key", ""))
                 played = (gs.get("hands", {}).get(hand, {}) or {}).get("played", 0)
-                if hand and (played >= 2 or hand in ARCH_HANDS.get(arch, set())):
+                dom = self.dominant_hand()
+                if hand and hand == dom:
+                    value += PLANET_MATCH_BONUS + 0.08   # 主力出牌流再提权
+                elif hand and (played >= 2 or hand in ARCH_HANDS.get(arch, set())):
                     value += PLANET_MATCH_BONUS
                 elif hand:
                     value -= PLANET_MISMATCH_PENALTY
@@ -345,7 +405,7 @@ class JevLayer:
                    if buy_ok(c.get("key", ""), gs)]
         if not entries:
             return None, "包内无安全可选卡 → 跳过"
-        state_text = serialize(gs)
+        state_text = self._state_with_flow(gs)
         criteria = {f"p{i}": card_name(c) for i, c in entries}
         try:
             resp = self.ask(state_text, {
@@ -391,7 +451,7 @@ class JevLayer:
             tag = blind.get("tag_name", "奖励tag") if blind else "tag"
             tag_val = tag_value(tag)
             tag_note = f"{tag}({tag_val})" if tag_val else tag
-            resp = self.ask(serialize(gs, facts["text"]), {
+            resp = self.ask(self._state_with_flow(gs, facts["text"]), {
                 "can_pass": _noul(
                     f"结合手牌/小丑/牌型等级，当前战力有较大概率通过该盲注"
                     f"(求解器估算: {facts['text']})"),

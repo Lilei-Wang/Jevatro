@@ -74,6 +74,11 @@ def best_play(gamestate: dict) -> dict:
 
     ranked.sort(key=lambda x: -x["total"])
     best = ranked[0] if ranked else None
+    # 决策链路：附 top3 候选（观测台展示"考虑过哪些替代方案"；
+    # Jev 仲裁在 top1/top2 接近时介入）
+    top3 = [{"hand": r["hand"], "total": round(r["total"], 1),
+             "chips": r["chips"], "mult": r["mult"],
+             "indices": list(r["indices"])} for r in ranked[:3]]
 
     # 无合法组合（极端约束叠加/换牌动画间隙）：退化为前 min(5) 张
     if best is None:
@@ -103,6 +108,7 @@ def best_play(gamestate: dict) -> dict:
     best["need"] = blind_score
     best["can_clear"] = (current_chips + best["total"] * hands_left) >= blind_score
     best["rules"] = {k: v for k, v in rules.items() if v not in (None, False)}
+    best["top3"] = top3
     return best
 
 
@@ -159,7 +165,15 @@ def best_discard(gs: dict) -> list[int]:
         keep.discard(golds[0])
 
     discard = [i for i in range(len(hand_cards)) if i not in keep][:5]
-    return discard
+    # 决策理由（进日志与观测台）：保住的方向
+    reason = []
+    if keep_suit:
+        reason.append(f"保{keep_suit}花色")
+    if keep_rank:
+        reason.append(f"保{keep_rank}点数")
+    if any("STEEL" in mods(c) for c in hand_cards):
+        reason.append("钢牌在手")
+    return discard, "、".join(reason) or "保最优组合"
 
 
 def _current_blind_score(gs: dict) -> int:
