@@ -621,7 +621,10 @@ function zhWhy(s){
      .replace(/naive_fallback/g,'朴素回退').replace(/dig:/g,'挖牌:')
      .replace(/best=/g,'最优=').replace(/need=/g,'需求=')
      .replace(/jev skip/g,'Jev跳盲').replace(/jev reroll/g,'Jev重掷')
-     .replace(/solver_fallback/g,'求解器兜底');
+     .replace(/solver_fallback/g,'求解器兜底')
+     .replace(/流派承诺=/g,'流派承诺·').replace(/流派判定=/g,'流派判定·')
+     .replace(/highcard/g,'高牌流').replace(/straight/g,'顺子流')
+     .replace(/flush/g,'同花流').replace(/pair/g,'对子流').replace(/balanced/g,'均衡');
   t=t.replace(_KEY_RE,m=>zhCard(m));
   for(const [en,zh] of Object.entries(HAND_ZH)) t=t.replaceAll(en,zh);
   return t;

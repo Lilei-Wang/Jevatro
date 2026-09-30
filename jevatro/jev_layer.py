@@ -101,6 +101,21 @@ ARCH_HANDS = {
 }
 MAX_DECK_CARDS = 60   # 卡组膨胀约束：超过后不再买标准牌包（稀释抽牌质量）
 
+# 迭代20 流派承诺：引擎件 → 锁定方向（社区策略"看到核心件就定流派"）
+ENGINE_LOCK = {
+    "j_baron": "highcard", "j_mime": "highcard",          # 钢K高牌流
+    "j_smeared": "flush", "j_four_fingers": "flush",      # 双色/四指同花流
+    "j_shortcut": "straight",                             # 捷径顺子流
+}
+# 牌型 → 方向（出牌流主力映射）
+HAND_TO_ARCH = {
+    "Pair": "pair", "Two Pair": "pair", "Three of a Kind": "pair",
+    "Full House": "pair", "Five of a Kind": "pair",
+    "Flush": "flush", "Flush House": "flush", "Flush Five": "flush",
+    "Straight": "straight", "Straight Flush": "straight",
+    "High Card": "highcard",
+}
+
 
 class JevLayer:
     def __init__(self, log=None):
@@ -116,6 +131,7 @@ class JevLayer:
         self._skip_ante: dict = {}   # M7：每 ante 跳盲次数护栏（与 llm_layer 对齐）
         self._flow: dict = {}        # 动态出牌流：hand → [次数, 累计分]（主力牌型跟踪）
         self._best_single = 0.0      # R15：本局单手最高分（引擎成型度）
+        self._committed: str | None = None   # 迭代20：已承诺流派（锁定后带滞回）
 
     # ------------------------------------------------------------------
     # 动态出牌流（#2）：跟踪各牌型实战均分，主力牌型注入决策
@@ -165,6 +181,9 @@ class JevLayer:
     def _state_with_flow(self, gs: dict, extra_facts: str = "") -> str:
         text = serialize(gs, extra_facts)
         extra = [x for x in (self.flow_line(), self.readiness_line(gs)) if x]
+        if self._committed:
+            extra.insert(0, f"[流派] 已承诺:{self._committed}（购买权重与星球升级围绕此方向，"
+                            f"除非主力均分1.5倍反超否则不切换）")
         return text + ("\n" + "\n".join(extra) if extra else "")
 
     # ------------------------------------------------------------------
@@ -314,10 +333,41 @@ class JevLayer:
         a = resp.answers
         # 方向 → Choice 结果（无效答案回落 default）
         arch_ans = a.get("archetype")
-        arch = arch_ans.choice if arch_ans and arch_ans.choice in WEIGHTS else "default"
+        jev_arch = arch_ans.choice if arch_ans and arch_ans.choice in WEIGHTS else "default"
+        # 迭代20 流派承诺（替代逐店重判的横跳）：引擎件锁定 > 已承诺(滞回)
+        # > 出牌流主力成型 > Jev 本店判定。锁定后权重 75% 走承诺方向。
+        held = {j.get("key") for j in jokers_area.get("cards", [])}
+        lock = next((la for k, la in ENGINE_LOCK.items() if k in held), None)
+        if lock:
+            self._committed = lock                    # 引擎件 = 硬承诺
+        elif self._committed is None:
+            dom = self.dominant_hand()
+            n = self._flow.get(dom, (0, 0))[0]
+            if dom and n >= 5:
+                self._committed = HAND_TO_ARCH.get(dom)   # 出牌流成型 = 软承诺
+        else:
+            # 滞回：主力均分超承诺方向 1.5 倍才允许换（防横跳）
+            dom = self.dominant_hand()
+            dom_arch = HAND_TO_ARCH.get(dom) if dom else None
+            if dom_arch and dom_arch != self._committed:
+                dom_avg = self._flow[dom][1] / self._flow[dom][0]
+                cur_hands = [h for h, ar in HAND_TO_ARCH.items() if ar == self._committed]
+                cur_avg = max((self._flow[h][1] / self._flow[h][0]
+                               for h in cur_hands if h in self._flow), default=0)
+                if dom_avg > cur_avg * 1.5:
+                    self._committed = dom_arch
+        arch = self._committed if self._committed in WEIGHTS else jev_arch
+        # 基础权重：Jev 本店判定 × default 混合（原逻辑）
         w_arch = WEIGHTS.get(arch, WEIGHTS["default"])
         w = {k: (1 - BLEND_DEFAULT) * w_arch[k] + BLEND_DEFAULT * WEIGHTS["default"][k]
              for k in DIMS}
+        if self._committed in WEIGHTS:
+            # 承诺方向主导（75%），Jev 本店判断只做微调
+            w_com = WEIGHTS[self._committed]
+            w = {k: 0.75 * w_com[k] + 0.25 * w[k] for k in DIMS}
+            blend_note = f"承诺={self._committed}"
+        else:
+            blend_note = f"判定={jev_arch}"
         # R16 阶段化权重：社区共识"经济小丑只放 Ante 1-3"——Ante 4+ 经济让位
         # 给倍率成型（economy ×0.3，差额均摊给 scaling/immediate）
         ante = gs.get("ante_num") or 1
@@ -412,7 +462,7 @@ class JevLayer:
                 card_buy_planned = True
             plan.append({"method": method, "params": params,
                          "why": f"{it['card'].get('key')} value={it['value']:.2f} "
-                                f"conf={it['conf']:.2f} arch={arch}"})
+                                f"conf={it['conf']:.2f} 流派{blend_note}"})
             money -= price
 
         # 重掷（H3+H4 反转）：货架存在性判断为"没有值得买的货"(noul<0.45)且钱够 → 掷。
