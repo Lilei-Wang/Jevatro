@@ -524,3 +524,10 @@ JSON 偶发截断。旗舰 LLM 上限（公开：GPT-6 bot 金注通关）需充
 
 ### 同种子回归：JEVATRO1/2/3（进行中，结果见 git 后续提交）
 ### 方法论：20种子批量的"臂间差<臂内噪声"教训 → 本批改动以行为验证为主
+
+### 回归受阻记录（2026-09-30 22:10）
+- JEVATRO1/2 两局 jev 调用全失败（SSL: WRONG_VERSION_NUMBER）→ 全程朴素回退
+- 诊断：curl 可达 api.typesafe.ai（HTTP 404=通），Python requests/httpx 全挂——
+  本机代理/TUN 按进程分流异常（同晚 github.com 也时断时续）
+- 五轮迭代代码完成+单测验证（红印章/mime平方/photograph×8/成型度/卡组行），
+  同种子回归待网络恢复后重跑（jev_bot JEVATRO1/2/3）
