@@ -455,7 +455,11 @@ def score_play(
             if r:
                 mult += arg * RANK_VALUE.get(r, 0)
         elif kind == "xmult_per_held_king":       # M5：Baron 每张在手 K
-            mult *= arg ** (ctx.get("held_kings", 0) * (2 if has_mime else 1))
+            # R18.5 钢K纪律：打出的 K 离手不再触发 Baron——扣掉后
+            # 求解器会自然学会"K 攥手里、废牌当高牌打"（社区定式）
+            kings_played = sum(1 for c in played if c["value"]["rank"] == "K")
+            eff = max(0, ctx.get("held_kings", 0) - kings_played)
+            mult *= arg ** (eff * (2 if has_mime else 1))
         elif kind == "photograph_xmult":          # R18: 首张人脸×2/次触发
             faces = sum(1 for c in scoring if c["value"]["rank"] in FACE)
             if faces:
@@ -463,8 +467,9 @@ def score_play(
                              and scoring[0]["value"]["rank"] in FACE) else 1
                 mult *= arg ** trig
 
-    # M5：在手钢牌 ×1.5（mime 在手时双触发）
-    held_steel = ctx.get("held_steel", 0)
+    # M5：在手钢牌 ×1.5（mime 在手时双触发）；R18.5：打出的钢牌离手不触发
+    steel_played = sum(1 for c in played if "STEEL" in mods(c))
+    held_steel = max(0, ctx.get("held_steel", 0) - steel_played)
     if held_steel:
         mult *= 1.5 ** (held_steel * (2 if has_mime else 1))
 

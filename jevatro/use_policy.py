@@ -85,7 +85,17 @@ def _blocked(gs: dict, key: str) -> bool:
 
 
 def _best_indices(gs: dict, n: int) -> list[int]:
-    """最优出牌的计分卡（按出牌组合原索引），取前 n 张。"""
+    """最优出牌的计分卡（按出牌组合原索引），取前 n 张。
+
+    R18.6 钢K流支持：持有 Baron 时，强化/印记目标优先 K——
+    K 是要攥在手里的倍率源，给 K 上钢/红印才是引擎件。
+    """
+    jkeys = {j.get("key") for j in (gs.get("jokers") or {}).get("cards", [])}
+    if "j_baron" in jkeys:
+        kings = [i for i, c in enumerate(gs["hand"]["cards"])
+                 if c["value"]["rank"] == "K"]
+        if len(kings) >= n:
+            return kings[:n]
     bp = best_play(gs)
     hand = gs["hand"]["cards"]
     from scoring import evaluate_hand
