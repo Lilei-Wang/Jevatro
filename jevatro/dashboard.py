@@ -699,15 +699,16 @@ function renderJevDecisions(recs, isLLM){
   if(isLLM){renderLLMDecisions(recs);return;}
   if(/_naive_/.test(cur||'')){
     document.getElementById('funnel').innerHTML=
-      '<div class="jempty" style="padding:8px">基线局：无模型决策，以下为求解器（Tier 0）出牌过程</div>'
-      +mergeCards([],solverCards(recs));
+      '<div class="jempty" style="padding:8px">基线局：无模型决策，以下为求解器（Tier 0）决策全程</div>'
+      +mergeCards([],solverCards(recs),actionCards(recs));
     document.getElementById('jStat').textContent='基线局';
     document.getElementById('jStatBar').innerHTML='';
     document.getElementById('jevRows').innerHTML=
       '<tr><td colspan="4" class="jempty">基线局没有模型调用</td></tr>';
     return;
   }
-  document.getElementById('funnel').innerHTML=mergeCards(buildFunnel(recs),solverCards(recs));
+  document.getElementById('funnel').innerHTML=
+    mergeCards(buildFunnel(recs),solverCards(recs),actionCards(recs));
   const rows=[];
   let confSum=0,confN=0,hiN=0;
   for(const r of recs){
@@ -821,7 +822,8 @@ function llmCards(recs){
 }
 // —— LLM 决策明细：每次调用一行（时间/决策/理由/延迟与令牌） ——
 function renderLLMDecisions(recs){
-  document.getElementById('funnel').innerHTML=mergeCards(llmCards(recs),solverCards(recs));
+  document.getElementById('funnel').innerHTML=
+    mergeCards(llmCards(recs),solverCards(recs),actionCards(recs));
   const rows=[];
   let latSum=0,tin=0,tout=0,fails=0;
   for(const r of recs){
@@ -1078,8 +1080,27 @@ function solverCards(recs){
   }
   return out;
 }
-function mergeCards(modelCards,solverCardsArr){
-  return [...modelCards,...solverCardsArr].sort((a,b)=>b.t-a.t).slice(0,40)
+// —— 其余动作卡：购买/使用/卖出/重掷/跳盲/选盲/结算/进下轮（时间线全覆盖）——
+function actionCards(recs){
+  const LBL={buy:'购买',use:'使用消耗牌',sell:'卖出小丑',reroll:'重掷商店',
+             skip:'跳过盲注',select:'选择盲注',cash_out:'回合结算',next_round:'进入下轮'};
+  const CLS={buy:'shop',use:'pack',sell:'shop',reroll:'reroll',
+             skip:'blind',select:'blind',cash_out:'solver',next_round:'solver'};
+  const out=[];
+  for(const r of recs){
+    if(r.kind!=='action'||!(r.method in LBL))continue;
+    const b=r.before||{};
+    const why=zhWhy(String((r.extra||(r.params||{}).extra||{}).why||''));
+    out.push({t:r.t,html:`<div class="fcard"><div class="fhead">
+      <span class="ftag ${CLS[r.method]}">${LBL[r.method]}</span>
+      <span class="fsub">ante${b.ante??'?'} r${b.round??'?'}</span>
+      <span class="sum" style="font-size:12px;color:#c6cede">${esc(zhParams(r))}${why?' · '+why:''}</span>
+      </div></div>`});
+  }
+  return out;
+}
+function mergeCards(modelCards,solverCardsArr,extraActs){
+  return [...modelCards,...(extraActs||[]),...solverCardsArr].sort((a,b)=>b.t-a.t).slice(0,40)
     .map(c=>c.html).join('')||'<div class="jempty">暂无决策过程</div>';
 }
 function shopCard(r,qs,as,acts,itemKeys){
