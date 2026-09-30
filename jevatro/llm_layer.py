@@ -137,6 +137,12 @@ class LlmLayer:
             if s not in ("JOKER", "PLANET", "VOUCHER", "TAROT", "SPECTRAL", "BOOSTER"):
                 continue
             candidates.append((f"item{i}", c))
+        # 卡包在独立 packs 区（重大修复：与 Jev 层同步，此前 LLM 也从未见过包）
+        for i, c in enumerate((gs.get("packs") or {}).get("cards", [])):
+            key = c.get("key", "")
+            if key.startswith(("p_buffoon", "p_standard", "p_celestial",
+                               "p_tarot", "p_spectral")):
+                candidates.append((f"pack{i}", c))
         vouchers = [(f"voucher{i}", v)
                     for i, v in enumerate(gs.get("vouchers", {}).get("cards", []))]
         all_items = candidates + vouchers
@@ -174,6 +180,8 @@ class LlmLayer:
                 continue
             if slot.startswith("voucher"):
                 params = {"voucher": int(slot[7:])}
+            elif slot.startswith("pack"):
+                params = {"pack": int(slot[4:])}
             else:
                 params = {"card": int(slot[4:])}
             plan.append({"method": "buy", "params": params,

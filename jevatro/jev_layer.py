@@ -178,6 +178,17 @@ class JevLayer:
             if s not in ("JOKER", "PLANET", "VOUCHER", "TAROT", "SPECTRAL", "BOOSTER"):
                 continue
             candidates.append((f"item{i}", c, s))
+        # 重大修复：卡包在独立的 packs 区（gs["packs"]["cards"]），从不在
+        # shop.cards 里——旧代码只扫商店区，真实对局从未买过任何包
+        # （test_pack 是直接 buy pack=N 绕过商店层，所以测试一直绿）
+        for i, c in enumerate((gs.get("packs") or {}).get("cards", [])):
+            key = c.get("key", "")
+            if not key.startswith(BUYABLE_PACK_PREFIXES):
+                continue
+            if (key.startswith("p_standard")
+                    and gs.get("cards", {}).get("count", 52) >= MAX_DECK_CARDS):
+                continue
+            candidates.append((f"pack{i}", c, "BOOSTER"))
 
         vouchers = [(f"voucher{i}", v, "VOUCHER") for i, v in
                     enumerate(gs.get("vouchers", {}).get("cards", []))]
@@ -297,9 +308,12 @@ class JevLayer:
             if is_voucher:
                 method, params = "buy", {"voucher": int(it["slot"][7:])}
                 voucher_buy_planned = True
+            elif it["slot"].startswith("pack"):
+                method, params = "buy", {"pack": int(it["slot"][4:])}
+                card_buy_planned = True  # 买包即开包，同样使货架/索引位移
             elif it["kind"] == "BOOSTER":
                 method, params = "buy", {"pack": int(it["slot"][4:])}
-                card_buy_planned = True  # 买包即开包，同样使商店索引位移
+                card_buy_planned = True  # 兼容旧 slot 命名
             else:
                 method, params = "buy", {"card": int(it["slot"][4:])}
                 card_buy_planned = True

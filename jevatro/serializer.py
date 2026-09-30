@@ -143,6 +143,12 @@ def serialize(gs: dict, extra_facts: str = "") -> str:
             entries.append(f"{card_name(c)} ${c.get('cost', {}).get('buy', '?')}")
         lines.append(f"[商店] " + " ; ".join(entries))
 
+    # 卡包在独立 packs 区（不在 shop.cards）——不加上 Jev 永远看不见货架上的包
+    pack_cards = (gs.get("packs") or {}).get("cards", [])
+    if pack_cards:
+        entries = [f"{card_name(c)} ${c.get('cost', {}).get('buy', '?')}" for c in pack_cards]
+        lines.append(f"[卡包] " + " ; ".join(entries))
+
     pack_cards = gs.get("pack", {}).get("cards", [])
     if pack_cards:
         lines.append(f"[开包可选] " + " | ".join(card_name(c) for c in pack_cards))
