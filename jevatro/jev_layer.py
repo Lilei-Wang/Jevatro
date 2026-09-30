@@ -115,6 +115,7 @@ class JevLayer:
         self._client = None
         self._skip_ante: dict = {}   # M7：每 ante 跳盲次数护栏（与 llm_layer 对齐）
         self._flow: dict = {}        # 动态出牌流：hand → [次数, 累计分]（主力牌型跟踪）
+        self._best_single = 0.0      # R15：本局单手最高分（引擎成型度）
 
     # ------------------------------------------------------------------
     # 动态出牌流（#2）：跟踪各牌型实战均分，主力牌型注入决策
@@ -123,6 +124,25 @@ class JevLayer:
         if h and h != "-":
             n, s = self._flow.get(h, (0, 0.0))
             self._flow[h] = (n + 1, s + (bp.get("total") or 0))
+        self._best_single = max(self._best_single, bp.get("total") or 0)
+
+    def readiness_line(self, gs: dict) -> str:
+        """R15 引擎成型度信号：单手最高分 vs Boss 需求曲线（社区"Ante4 检查点"）。"""
+        if self._best_single < 1:
+            return ""
+        boss = next((b.get("score") for b in (gs.get("blinds") or {}).values()
+                     if isinstance(b, dict) and b.get("type") == "BOSS"
+                     and b.get("status") != "DEFEATED"), None)
+        if not boss:
+            return ""
+        ratio = self._best_single / max(boss, 1)
+        line = f"[成型度] 单手最高{self._best_single:.0f} vs 下个Boss需{boss}（{ratio:.0%}）"
+        ante = gs.get("ante_num") or 1
+        if ante >= 4 and self._best_single < 6000:
+            line += " ⚠Ante4+检查点未达标(单手需≥6000), 战力成型优先级最高"
+        elif ratio < 0.5:
+            line += " ⚠成型不足Boss需求一半, 优先立即战力"
+        return line
 
     def dominant_hand(self) -> str | None:
         best, best_avg = None, 0.0
@@ -144,8 +164,8 @@ class JevLayer:
 
     def _state_with_flow(self, gs: dict, extra_facts: str = "") -> str:
         text = serialize(gs, extra_facts)
-        fl = self.flow_line()
-        return text + "\n" + fl if fl else text
+        extra = [x for x in (self.flow_line(), self.readiness_line(gs)) if x]
+        return text + ("\n" + "\n".join(extra) if extra else "")
 
     # ------------------------------------------------------------------
     # 出牌仲裁（#1）：top1/top2 算分接近且牌型不同时，Jev 一票定夺
@@ -298,6 +318,14 @@ class JevLayer:
         w_arch = WEIGHTS.get(arch, WEIGHTS["default"])
         w = {k: (1 - BLEND_DEFAULT) * w_arch[k] + BLEND_DEFAULT * WEIGHTS["default"][k]
              for k in DIMS}
+        # R16 阶段化权重：社区共识"经济小丑只放 Ante 1-3"——Ante 4+ 经济让位
+        # 给倍率成型（economy ×0.3，差额均摊给 scaling/immediate）
+        ante = gs.get("ante_num") or 1
+        if ante >= 4:
+            cut = w["economy"] * 0.7
+            w["economy"] -= cut
+            w["scaling"] += cut * 0.6
+            w["immediate"] += cut * 0.4
 
         scored = []
         for slot, card, kind in all_items:
@@ -326,6 +354,11 @@ class JevLayer:
                     value += PLANET_MATCH_BONUS
                 elif hand:
                     value -= PLANET_MISMATCH_PENALTY
+            # R19 X倍率至上：社区公理"×mult 是乘法贡献"——当前无任何 X 倍率
+            # 小丑时（战力警示态），X 倍率候选商品直接提权
+            from scoring import XMULT_KEYS
+            if card.get("key", "") in XMULT_KEYS and not _has_xmult(gs):
+                value += 0.10
             scored.append({"slot": slot, "card": card, "kind": kind, "value": value,
                            "conf": min_conf, "dims": dims})
 
@@ -497,6 +530,13 @@ def _sellable_jokers(jokers_area: dict) -> list[dict]:
             continue
         out.append(j)
     return out
+
+
+def _has_xmult(gs: dict) -> bool:
+    """当前是否已持有 X 倍率小丑（R19 提权条件）。"""
+    from scoring import XMULT_KEYS
+    return any(j.get("key", "") in XMULT_KEYS
+               for j in (gs.get("jokers") or {}).get("cards", []))
 
 
 def _score(instructions, criteria):

@@ -82,6 +82,42 @@ def _blind_line(gs: dict) -> str:
     return "; ".join(parts)
 
 
+def deck_stats_line(gs: dict) -> str:
+    """R17 卡组修牌视野：全卡组明细（gs.cards.cards）→ 花色/强化/点数分布 + 手牌上限。
+
+    社区共识"卡组修牌是后期天花板"——统一花色/钢化/删废牌的演化目标，
+    以及手牌上限（钢K流引擎容量）此前对决策层完全不可见。
+    """
+    deck = ((gs.get("cards") or {}).get("cards")) or []
+    if not deck:
+        return ""
+    suits = {}
+    enh = {}
+    ranks = {}
+    from scoring import mods as _mods
+    for cd in deck:
+        s = cd.get("value", {}).get("suit", "?")
+        suits[s] = suits.get(s, 0) + 1
+        r = cd.get("value", {}).get("rank", "?")
+        ranks[r] = ranks.get(r, 0) + 1
+        for m in _mods(cd):
+            if m in ("STEEL", "GOLD", "WILD", "GLASS", "STONE", "BONUS", "MULT", "LUCKY"):
+                enh[m] = enh.get(m, 0) + 1
+    SUIT_ZH2 = {"S": "♠", "H": "♥", "D": "♦", "C": "♣"}
+    ENH_ZH2 = {"STEEL": "钢", "GOLD": "金", "WILD": "百搭", "GLASS": "玻璃", "STONE": "石",
+               "BONUS": "奖励", "MULT": "倍率", "LUCKY": "幸运"}
+    suit_s = " ".join(f"{SUIT_ZH2.get(k,k)}{v}" for k, v in sorted(suits.items()))
+    enh_s = " ".join(f"{ENH_ZH2.get(k,k)}{v}" for k, v in sorted(enh.items())) or "无强化"
+    top_ranks = sorted(ranks.items(), key=lambda kv: -kv[1])[:2]
+    rank_s = " ".join(f"{r}×{n}" for r, n in top_ranks)
+    hs = (gs.get("hand") or {}).get("limit")
+    hs_s = f"手牌上限{hs}" + ("(偏小,影响引擎容量)" if hs and hs < 8 else "") if hs else ""
+    line = f"[卡组] {len(deck)}张: {suit_s} | 强化: {enh_s} | 最多点数: {rank_s}"
+    if hs_s:
+        line += f" | {hs_s}"
+    return line
+
+
 def serialize(gs: dict, extra_facts: str = "") -> str:
     r = gs.get("round", {})
     lines = []
@@ -106,7 +142,17 @@ def serialize(gs: dict, extra_facts: str = "") -> str:
     if jok_cards and not has_x:
         lines.append("[战力警示] 当前没有任何X倍率小丑, 后续盲注需求指数增长, "
                      "加算类小丑会越来越吃力, X倍率商品优先级应提高")
+    # R19 经济转型提示：社区共识 Ante 3-4 起经济价值让位倍率成型
+    if (gs.get("ante_num") or 1) >= 4 and money >= 20 and jok_cards and not has_x:
+        lines.append("[转型提示] 已到Ante4+且金币充裕——利息循环应让位于战力成型, "
+                     "优先把金币转化为X倍率/成长型小丑")
     lines.append(f"[盲注] {_blind_line(gs)}")
+
+    # R17：卡组修牌视野（全卡组明细：花色分布/强化/手牌上限——社区共识的
+    # 后期天花板，修牌计划的事实基础）
+    deck_line = deck_stats_line(gs)
+    if deck_line:
+        lines.append(deck_line)
 
     hands = gs.get("hands", {})
     played = sorted(hands.items(), key=lambda kv: -kv[1].get("played", 0))[:4]

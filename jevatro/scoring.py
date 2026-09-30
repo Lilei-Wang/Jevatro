@@ -221,7 +221,6 @@ JOKER_EFFECTS: dict[str, tuple[str, object]] = {
     "j_campfire": ("xmult", 1.5),
     "j_lucky_cat": ("xmult", 1.3),
     "j_flash": ("flat_mult", 8),
-    "j_photograph": ("xmult", 1.8),
     "j_loyalty_card": ("xmult", 1.6),
     "j_hit_the_road": ("xmult", 1.3),
     "j_glass": ("xmult", 1.5),
@@ -253,6 +252,7 @@ JOKER_EFFECTS: dict[str, tuple[str, object]] = {
     "j_fortune_teller": ("flat_mult", 6),             # 每张已用塔罗+1 mult
     "j_red_card": ("flat_mult", 9),                   # 每跳过一包+3 mult
     "j_hanging_chad": ("retrigger_first", 2),         # 首张计分卡重触发2次
+    "j_photograph": ("photograph_xmult", 2.0),        # 首张人脸计分卡×2(每触发一次)
     "j_raised_fist": ("lowest_held_mult", 2),         # 在手最低点数×2加 Mult
     "j_mime": ("mime", 1),                            # 在手卡效果重触发（钢牌×2）
     # 无法可靠建模（需牌组构成/每轮变化目标/rarity，gamestate 未提供，按 0 计）：
@@ -339,9 +339,11 @@ def score_play(
     for pos, cd in enumerate(scoring):
         c_chips = _card_chips(cd) + _enh_chips(cd)
         a, m = _card_mult(cd)
-        chips += c_chips
-        mult += a
-        mult *= m
+        red_seal = "RED" in mods(cd)                 # R18: 红印章→该卡重触发
+        n_trig = 2 if red_seal else 1
+        chips += c_chips * n_trig
+        mult += a * n_trig
+        mult *= m ** n_trig
         if pos == 0:
             first_contrib = (c_chips, a, m)
     if first_contrib and retrigger_first:
@@ -453,7 +455,13 @@ def score_play(
             if r:
                 mult += arg * RANK_VALUE.get(r, 0)
         elif kind == "xmult_per_held_king":       # M5：Baron 每张在手 K
-            mult *= arg ** ctx.get("held_kings", 0)
+            mult *= arg ** (ctx.get("held_kings", 0) * (2 if has_mime else 1))
+        elif kind == "photograph_xmult":          # R18: 首张人脸×2/次触发
+            faces = sum(1 for c in scoring if c["value"]["rank"] in FACE)
+            if faces:
+                trig = 3 if (retrigger_first and scoring
+                             and scoring[0]["value"]["rank"] in FACE) else 1
+                mult *= arg ** trig
 
     # M5：在手钢牌 ×1.5（mime 在手时双触发）
     held_steel = ctx.get("held_steel", 0)
